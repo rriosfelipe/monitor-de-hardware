@@ -1,6 +1,8 @@
 # Monitor de Hardware — versão local
 
-Painel com as leituras reais dos sensores do PC (CPU, GPU, RAM, discos, ventoinhas, rede, tensões e a lista completa de sensores), aberto numa janela própria, e um ícone na bandeja com a temperatura da CPU.
+*English version: [README.md](README.md).*
+
+Painel com as leituras reais dos sensores do PC (CPU, GPU, RAM, discos, ventoinhas, rede, tensões e a lista completa de sensores), aberto numa janela própria, e um ícone na bandeja com a temperatura do componente mais quente (CPU ou GPU).
 
 ## Como funciona
 
@@ -78,12 +80,13 @@ Os cartões do processador e da placa de vídeo listam os programas que mais usa
 
 A leitura (`Processos.cs`) usa as mesmas fontes do Gerenciador de Tarefas e só roda enquanto o painel estiver aberto. Processos protegidos do sistema podem não aparecer na lista de CPU.
 
-## Cores
+## Ajustes (cores e alertas)
 
-Botão **Cores** no topo do painel: temas prontos (Padrão, Grafite, Âmbar, Alto contraste, Claro), cada cor da interface e das faixas de temperatura, e os limites de "morno" e "quente". A pré-visualização é ao vivo; **Salvar** grava em `config.json` e vale também para o ícone da bandeja. Para voltar ao original, use **Restaurar padrão** ou apague o `config.json`.
+Botão **Ajustes** no topo do painel: temas prontos (Padrão, Grafite, Âmbar, Alto contraste, Claro), cada cor da interface e das faixas de temperatura, e os limites de "morno" e "quente". A pré-visualização é ao vivo; **Salvar** grava em `config.json` e vale também para o ícone da bandeja. Para voltar ao original, use **Restaurar padrão** ou apague o `config.json`.
 
 ## Opções (rodando o `servidor.ps1` manualmente)
 
 - Outra porta: `-Porta 8100`
 - LibreHardwareMonitor em outra porta: `-Fonte http://localhost:9000/data.json`
 - Não abrir a janela ao iniciar: `-NaoAbrirNavegador`
+- Não abrir o LibreHardwareMonitor (usado na inicialização do Windows): `-SemLHM`

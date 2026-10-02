@@ -90,3 +90,7 @@ Botão **Ajustes** no topo do painel: temas prontos (Padrão, Grafite, Âmbar, A
 - LibreHardwareMonitor em outra porta: `-Fonte http://localhost:9000/data.json`
 - Não abrir a janela ao iniciar: `-NaoAbrirNavegador`
 - Não abrir o LibreHardwareMonitor (usado na inicialização do Windows): `-SemLHM`
+
+## Licença
+
+[MIT](LICENSE). O LibreHardwareMonitor é um projeto à parte, com licença própria (MPL-2.0), e não faz parte deste repositório.

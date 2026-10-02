@@ -139,3 +139,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 - State-changing requests (`POST`) are accepted only from the dashboard's own origin and only with a JSON body. That blocks other websites from triggering them through your browser.
 - Enabling and disabling drives is limited to USB drives. The server refuses system/boot disks and any disk holding a page file, and every action still requires the Windows administrator prompt.
 - LibreHardwareMonitor's own web server accepts connections from the network, which is why Windows Firewall asks about it. Deny that prompt (or block port 8085) if you don't want other devices to read your sensors. The dashboard keeps working because it reads from `localhost`.
+
+## License
+
+[MIT](LICENSE). LibreHardwareMonitor is a separate project under its own license (MPL-2.0); it is not included in this repository.

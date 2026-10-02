@@ -32,7 +32,7 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
   Vários alertas ao mesmo tempo viram uma notificação só, e clicar nela abre o painel. Os alertas ativos também aparecem em faixas no topo do painel. Cada um pode ser dispensado até a próxima vez que o painel for aberto; um alerta novo aparece mesmo assim.
 - **Saúde dos discos.** Para cada disco: letra da unidade (C:, D:…), tipo (HD, SSD ou NVMe), vida útil restante, tempo ligado e uma nota em destaque quando há algo a fazer.
 - **Desativar e ativar HDs externos.** Coloca um disco USB *offline* no Windows, ou de volta online, com um clique. O Windows para de acessá-lo sem precisar desconectar o cabo, e **nada é apagado**. Antes de desativar, o painel avisa sobre programas usando o disco e **torrents do qBittorrent** salvos nele, e grava o que estiver pendente. Exige a confirmação de administrador do Windows.
-- **Registro de 30 dias.** Uma linha por minuto (média e pico) em arquivos CSV diários, que abrem direto no Excel. O painel mostra gráficos de 24 horas, 7 dias e 30 dias, os picos do período com dia e hora, e a energia gasta por CPU e GPU.
+- **Registro de 30 dias** (seção recolhível, com resumo do período quando fechada). Uma linha por minuto (média e pico) em arquivos CSV diários, que abrem direto no Excel. O painel mostra gráficos de 24 horas, 7 dias e 30 dias, os picos do período com dia e hora, e a energia gasta por CPU e GPU.
 - **Ajustes:** temas de cores, cada cor da interface, as faixas de temperatura, o limite de temperatura dos discos e as notificações ligadas ou desligadas.
 
 ## Requisitos

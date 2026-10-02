@@ -137,6 +137,11 @@ details.hw[open] summary .chev{transform:rotate(90deg)}
 .hw-body{padding:0 20px 20px;columns:380px;column-gap:16px}
 .hw-body .sgrp{break-inside:avoid;margin-bottom:16px;display:block}
 [hidden]{display:none!important}
+.fold-btn{display:flex;align-items:center;gap:10px;min-height:44px;padding:0;border:0;background:transparent;color:var(--text);font:600 18px var(--sans);cursor:pointer;text-align:left}
+.fold-btn:hover{background:transparent;color:var(--accent)}
+.fold-btn .chev{color:var(--muted);font-size:20px;transition:transform .2s;width:14px}
+.fold-btn[aria-expanded=true] .chev{transform:rotate(90deg)}
+#cardRegistro.fechado{gap:0}
 .reg-resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:10px}
 .reg-resumo .tile .tv{font-size:20px}
 .reg-resumo .tile .ts{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -446,14 +451,16 @@ body.compact .kpi .kv{font-size:24px}
 
 <section class="card" id="cardRegistro" aria-labelledby="ttlRegistro">
   <div class="card-head">
-    <h2 class="ttl" id="ttlRegistro"><svg class="ic" data-icon="relogio" aria-hidden="true"></svg>Registro de longo prazo</h2>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <h2 class="ttl" id="ttlRegistro" style="margin:0"><button type="button" class="fold-btn" id="rgAlternar" aria-expanded="false" aria-controls="rgCorpo"><span class="chev" aria-hidden="true">›</span><svg class="ic" data-icon="relogio" aria-hidden="true"></svg>Registro de longo prazo</button></h2>
+    <span class="model" id="rgResumoFechado"></span>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center" id="rgControles">
       <span class="seg" role="group" aria-label="Período do registro">
         <button type="button" data-dias="1" aria-pressed="true">24 horas</button><button type="button" data-dias="7" aria-pressed="false">7 dias</button><button type="button" data-dias="30" aria-pressed="false">30 dias</button>
       </span>
       <button type="button" id="btnPastaReg" title="Abre a pasta com os arquivos CSV (abrem no Excel)">Abrir arquivos CSV</button>
     </div>
   </div>
+  <div id="rgCorpo" style="display:flex;flex-direction:column;gap:16px">
   <div class="reg-resumo">
     <div class="tile"><div class="tl">CPU · pico</div><div class="tv" id="rgCpu">—</div><div class="ts" id="rgCpuT">—</div></div>
     <div class="tile"><div class="tl">GPU · pico</div><div class="tv" id="rgGpu">—</div><div class="ts" id="rgGpuT">—</div></div>
@@ -465,6 +472,7 @@ body.compact .kpi .kv{font-size:24px}
   <div class="lchart" id="rgDiscos"></div>
   <div class="dchips" id="rgDiscoChips" role="group" aria-label="Discos exibidos no gráfico"></div>
   <p class="sens-nota" id="rgNota">Carregando registro…</p>
+  </div>
 </section>
 
 <section class="sensores" aria-labelledby="ttlSensores">
@@ -1603,6 +1611,8 @@ body.compact .kpi .kv{font-size:24px}
     setText('rgDiscoT', dq ? dq.rotulo + ' · ' + quando(dq.maxT) : 'sem dados');
     $('rgDiscoT').title = dq ? dq.rotulo : '';
     setText('rgKwh', fmt(r.kwh, r.kwh < 10 ? 2 : 1) + ' kWh');
+    var nomePer = regDias === 1 ? '24 h' : regDias + ' dias';
+    setText('rgResumoFechado', d.minutos ? nomePer + ' · CPU até ' + (r.cpuMax != null ? fmtT(r.cpuMax) + un() : '—') + ' · GPU até ' + (r.gpuMax != null ? fmtT(r.gpuMax) + un() : '—') + ' · ' + fmt(r.kwh, r.kwh < 10 ? 2 : 1) + ' kWh' : nomePer + ' · ainda sem dados');
     setText('rgHoras', fmt(d.minutos / 60, 1) + ' h registradas');
     var primeiro = d.pontos.length ? d.pontos[0][0] : null;
     setText('rgNota', d.minutos
@@ -1631,6 +1641,22 @@ body.compact .kpi .kv{font-size:24px}
     var id = b.dataset.disco, i = regDiscosSel.indexOf(id);
     if (i >= 0) regDiscosSel.splice(i, 1); else regDiscosSel.push(id);
     desenharRegistro();
+  });
+  function abrirRegistro(v) {
+    $('rgAlternar').setAttribute('aria-expanded', String(v));
+    $('rgCorpo').hidden = !v;
+    $('rgControles').hidden = !v;
+    $('rgResumoFechado').hidden = v;
+    $('cardRegistro').classList.toggle('fechado', !v);
+    if (v && regDados) desenharRegistro();
+  }
+  var rgAberto = false;
+  try { rgAberto = localStorage.getItem('mh-reg-aberto') === '1'; } catch (e) {}
+  abrirRegistro(rgAberto);
+  $('rgAlternar').addEventListener('click', function () {
+    rgAberto = !rgAberto;
+    abrirRegistro(rgAberto);
+    try { localStorage.setItem('mh-reg-aberto', rgAberto ? '1' : '0'); } catch (e) {}
   });
   $('btnPastaReg').addEventListener('click', function () { fetch('/abrir-registros', { method: 'POST' }).catch(function () {}); });
   tickRegistro();

@@ -34,7 +34,7 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
   Several alerts at once are merged into a single notification. Active alerts also appear as banners in the dashboard, and each can be dismissed until the next time you open it.
 - **Disk health.** For each drive: its letter (C:, D:…), type (HDD, SSD or NVMe), remaining life, power-on time, and a highlighted note when action is needed.
 - **Enable/disable external HDDs.** Puts a USB drive *offline* in Windows, or back online, with one click. That stops all access to it without unplugging. Before disabling, it warns about programs using the drive and **qBittorrent torrents** saved on it, then flushes pending writes. The Windows administrator prompt is required.
-- **30-day log.** One line per minute (average and peak) in daily CSV files that open directly in Excel. The dashboard shows 24-hour, 7-day and 30-day charts, peak values with date and time, and the energy used by CPU and GPU.
+- **30-day log** (collapsible section, with a one-line period summary when closed). One line per minute (average and peak) in daily CSV files that open directly in Excel. The dashboard shows 24-hour, 7-day and 30-day charts, peak values with date and time, and the energy used by CPU and GPU.
 - **Settings** (*Ajustes*): color themes, every interface color, temperature bands, the drive temperature limit, and alerts on or off.
 
 ## Requirements

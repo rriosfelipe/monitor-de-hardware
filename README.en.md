@@ -16,7 +16,7 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
   - History charts with temperature and load, over 1, 5 or 15 minutes, with hover tooltips.
   - Per-core clocks and load (collapsible).
   - **All sensors** (collapsible section): a searchable, filterable list with a min–max range bar for every sensor.
-  - **Compact mode** (*Compacto*): only the summary strip, for a small window or a second screen.
+  - **Compact mode** (*Compacto*): only the summary strip, in two columns. The window shrinks to fit it and returns to its previous size (maximized included) when you leave compact mode.
 - **Tray icon.** Shows the hotter of CPU and GPU, colored by temperature band. A thin stripe under the number tells you which one it is: blue for CPU, purple for GPU. You can switch it to CPU only, GPU only or alternating.
 - **Per-program usage.** The programs using the most CPU (with RAM) and the most GPU (with engine type and VRAM). Same data sources as Task Manager.
 - **Alerts** as Windows notifications, with cooldowns:
@@ -106,6 +106,7 @@ LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ─�
 |---|---|
 | `servidor.ps1` | Tray app and local HTTP server. Relays sensor data, evaluates alerts, keeps a 15-minute history buffer, queries drive letters and disk state in the background, and enables/disables external drives through an elevated `Set-Disk`. |
 | `index.html` | The whole dashboard (HTML, CSS and JS in one file). |
+| `Janela.cs` | Resizes the dashboard window for compact mode (Windows API). It only acts on the active window with the dashboard's exact title. |
 | `Processos.cs` | Per-program CPU time and GPU engine/VRAM usage. It uses the native PDH API, because `Get-Counter` is far too slow with hundreds of GPU counter instances. |
 | `Registro.cs` | Per-minute aggregation, daily CSV files, retention, and downsampled series for the charts. |
 | `Iniciar monitor.bat` | Starts `servidor.ps1` hidden. |
@@ -133,6 +134,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `GET /disco-uso?n=<disk>` | What is using a drive (processes, qBittorrent torrents) |
 | `GET/POST /config` | Read or save settings |
 | `POST /discos-estado` | Enable or disable an external drive |
+| `POST /janela` | Shrink or restore the dashboard window (compact mode) |
 | `POST /abrir-registros` | Open the CSV folder in Explorer |
 
 ## Security notes

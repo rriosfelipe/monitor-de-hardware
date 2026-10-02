@@ -36,6 +36,10 @@ try {
 }
 $arquivoConfig = Join-Path $raiz 'config.json'
 
+# Redimensionar a janela do painel no modo compacto (Janela.cs).
+$script:janelaOk = $false
+try { Add-Type -Path (Join-Path $raiz 'Janela.cs'); $script:janelaOk = $true } catch { }
+
 # Registro de longo prazo (Registro.cs): uma linha por minuto em registros\AAAA-MM-DD.csv, guardada por 30 dias.
 $pastaRegistros = Join-Path $raiz 'registros'
 $script:registro = $null
@@ -216,6 +220,30 @@ function Atender($ctx) {
                 $n = -1
                 [void][int]::TryParse($ctx.Request.QueryString['n'], [ref]$n)
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject (Uso-Disco $n) -Compress)))
+            }
+            '/janela' {
+                # Só o próprio painel; e só a janela cujo título é exatamente o do painel.
+                $req = $ctx.Request
+                if ($req.HttpMethod -ne 'POST' -or $req.Headers['Origin'] -ne "http://localhost:$Porta" -or $req.ContentType -notlike 'application/json*' -or $req.ContentLength64 -gt 1024) {
+                    Responder $res 403 'text/plain; charset=utf-8' ($utf8.GetBytes('Recusado'))
+                    return
+                }
+                $leitor = New-Object System.IO.StreamReader($req.InputStream, $utf8)
+                $corpo = $leitor.ReadToEnd(); $leitor.Close()
+                $r = 'indisponível'
+                try {
+                    $o = $corpo | ConvertFrom-Json
+                    $titulo = [string]$o.titulo
+                    if (-not $script:janelaOk -or -not $titulo.StartsWith('Monitor de Hardware · ')) { throw 'recusado' }
+                    if ($o.restaurar -eq $true) {
+                        $r = [MonitorHW.Janela]::Restaurar($titulo)
+                    } else {
+                        $l = [int]$o.largura; $a = [int]$o.altura
+                        if ($l -lt 200 -or $l -gt 8000 -or $a -lt 150 -or $a -gt 8000) { throw 'tamanho inválido' }
+                        $r = [MonitorHW.Janela]::Ajustar($titulo, $l, $a, ($o.naoGuardar -ne $true))
+                    }
+                } catch { $r = 'recusado' }
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject @{ resultado = $r } -Compress)))
             }
             '/letras' {
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes($script:letrasJson))

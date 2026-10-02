@@ -14,7 +14,7 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
   - Gráficos de histórico com temperatura e uso, em períodos de 1, 5 ou 15 minutos, com o valor de cada momento ao passar o mouse. O servidor guarda os últimos 15 minutos, então o gráfico já abre preenchido.
   - Clock e uso por núcleo, em seção recolhível.
   - **Todos os sensores** (seção recolhível): busca por nome, filtro por tipo e, em cada sensor, uma barra com a faixa mínimo–máximo e um ponto no valor atual.
-  - **Modo compacto:** só a faixa de resumo, para deixar a janela pequena num canto ou num segundo monitor.
+  - **Modo compacto:** só a faixa de resumo, em duas colunas. A janela encolhe sozinha para caber os indicadores e volta ao tamanho anterior (inclusive maximizada) ao sair do modo.
 - **Ícone na bandeja.** Mostra a temperatura mais alta entre CPU e GPU, na cor da faixa de temperatura. Uma faixinha embaixo do número indica de quem ele é: azul para CPU, roxa para GPU. Dá para trocar para só CPU, só GPU ou alternar entre as duas.
 - **Uso por programa.** Os programas que mais usam a CPU (com a RAM de cada um) e a GPU (com o tipo de trabalho e a VRAM). As fontes são as mesmas do Gerenciador de Tarefas.
 - **Alertas** por notificação do Windows:
@@ -104,6 +104,7 @@ LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ─�
 |---|---|
 | `servidor.ps1` | Programa da bandeja e servidor HTTP local. Repassa os dados dos sensores, avalia os alertas, guarda 15 minutos de histórico, consulta em segundo plano as letras e o estado dos discos, e ativa ou desativa discos externos com um `Set-Disk` elevado. |
 | `index.html` | O painel inteiro (HTML, CSS e JS num arquivo só). |
+| `Janela.cs` | Redimensiona a janela do painel no modo compacto (API do Windows). Só age na janela ativa com o título exato do painel. |
 | `Processos.cs` | Tempo de CPU por programa e uso de GPU (motor e VRAM). Usa a API nativa PDH, porque o `Get-Counter` é lento demais com as centenas de instâncias dos contadores de GPU. |
 | `Registro.cs` | Agregação por minuto, arquivos CSV diários, limpeza dos antigos e séries resumidas para os gráficos. |
 | `Iniciar monitor.bat` | Inicia o `servidor.ps1` escondido. |
@@ -131,6 +132,7 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `GET /disco-uso?n=<disco>` | O que está usando um disco (programas e torrents do qBittorrent) |
 | `GET/POST /config` | Lê ou grava os ajustes |
 | `POST /discos-estado` | Ativa ou desativa um disco externo |
+| `POST /janela` | Encolhe ou restaura a janela do painel (modo compacto) |
 | `POST /abrir-registros` | Abre a pasta dos CSV no Explorer |
 
 ## Segurança

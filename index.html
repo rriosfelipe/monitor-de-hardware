@@ -1441,17 +1441,59 @@ body.compact .kpi .kv{font-size:24px}
   });
 
   // Modo compacto: só a faixa de resumo; lembra a escolha.
-  function aplicarCompacto(v) {
+  // Redimensiona a janela (só na janela própria do monitor; numa aba comum do navegador, nada acontece).
+  var COMPACTO_LARGURA = 470, corrigir = null;
+  function pedirJanela(dados) {
+    dados.titulo = document.title;
+    return fetch('/janela', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) })
+      .then(function (r) { return r.json(); }).catch(function () { return {}; });
+  }
+  function ajustarJanela(v) {
+    var dpr = window.devicePixelRatio || 1;
+    var dx = window.outerWidth - window.innerWidth, dy = window.outerHeight - window.innerHeight;
+    if (v) {
+      var wrap = document.querySelector('.wrap'), antes = wrap.style.width;
+      wrap.style.width = COMPACTO_LARGURA + 'px';
+      var alvoH = Math.ceil(wrap.getBoundingClientRect().height);
+      wrap.style.width = antes;
+      corrigir = alvoH;
+      pedirJanela({ largura: Math.round((COMPACTO_LARGURA + dx) * dpr), altura: Math.round((alvoH + dy) * dpr) });
+    } else {
+      corrigir = null;
+      pedirJanela({ restaurar: true }).then(function (r) {
+        // sem tamanho guardado (ex.: o monitor reiniciou): volta ao tamanho padrão
+        if (r.resultado === 'nada' && window.innerWidth < 900) {
+          pedirJanela({ largura: Math.round((1440 + dx) * dpr), altura: Math.round((960 + dy) * dpr), naoGuardar: true });
+        }
+      });
+    }
+  }
+  // depois de encolher, confere a altura uma vez (a moldura da janela varia com a escala do Windows)
+  window.addEventListener('resize', function () {
+    if (!compacto || corrigir == null) return;
+    var falta = corrigir - Math.ceil(document.querySelector('.wrap').getBoundingClientRect().height);
+    var sobra = window.innerHeight - corrigir;
+    corrigir = null;
+    if (Math.abs(sobra) > 4) {
+      var dpr = window.devicePixelRatio || 1;
+      pedirJanela({ largura: Math.round(window.outerWidth * dpr), altura: Math.round((window.outerHeight - sobra) * dpr), naoGuardar: true });
+    }
+  });
+  function aplicarCompacto(v, mudarJanela) {
     compacto = v;
     document.body.classList.toggle('compact', v);
     $('btnCompacto').setAttribute('aria-pressed', String(v));
     $('btnCompacto').textContent = v ? 'Completo' : 'Compacto';
+    if (mudarJanela) ajustarJanela(v);
     if (!v && last) render(last, true);
     if (!v && typeof tickRegistro === 'function') tickRegistro();
   }
-  try { aplicarCompacto(localStorage.getItem('mh-compacto') === '1'); } catch (e) {}
+  var iniciarCompacto = false;
+  try { iniciarCompacto = localStorage.getItem('mh-compacto') === '1'; } catch (e) {}
+  aplicarCompacto(iniciarCompacto, false);
+  if (iniciarCompacto) setTimeout(function () { ajustarJanela(true); }, 600);
   $('btnCompacto').addEventListener('click', function () {
-    aplicarCompacto(!compacto);
+    aplicarCompacto(!compacto, true);
     try { localStorage.setItem('mh-compacto', compacto ? '1' : '0'); } catch (e) {}
   });
 

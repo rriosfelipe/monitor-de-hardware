@@ -15,7 +15,7 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
   - Dual-ring gauges: outer ring is temperature, inner ring is load.
   - History charts with temperature and load, over 1, 5 or 15 minutes, with hover tooltips.
   - Per-core clocks and load (collapsible).
-  - **All sensors:** a searchable, filterable list with a min–max range bar for every sensor.
+  - **All sensors** (collapsible section): a searchable, filterable list with a min–max range bar for every sensor.
   - **Compact mode** (*Compacto*): only the summary strip, for a small window or a second screen.
 - **Tray icon.** Shows the hotter of CPU and GPU, colored by temperature band. A thin stripe under the number tells you which one it is: blue for CPU, purple for GPU. You can switch it to CPU only, GPU only or alternating.
 - **Per-program usage.** The programs using the most CPU (with RAM) and the most GPU (with engine type and VRAM). Same data sources as Task Manager.

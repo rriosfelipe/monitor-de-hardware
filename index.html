@@ -477,9 +477,10 @@ body.compact .kpi .kv{font-size:24px}
 
 <section class="sensores" aria-labelledby="ttlSensores">
   <div class="section-title">
-    <h2 class="ttl" id="ttlSensores"><svg class="ic" data-icon="board" aria-hidden="true"></svg>Todos os sensores</h2>
+    <h2 class="ttl" id="ttlSensores" style="margin:0"><button type="button" class="fold-btn" id="sensAlternar" aria-expanded="false" aria-controls="sensCorpo"><span class="chev" aria-hidden="true">›</span><svg class="ic" data-icon="board" aria-hidden="true"></svg>Todos os sensores</button></h2>
     <span class="model" id="sensCount"></span>
   </div>
+  <div id="sensCorpo" style="display:flex;flex-direction:column;gap:12px">
   <div class="sens-tools">
     <label class="busca"><svg class="ic" data-icon="search" aria-hidden="true"></svg><input type="search" id="sensBusca" placeholder="Buscar sensor (ex.: fan, vcore, composite)" aria-label="Buscar sensor" autocomplete="off"></label>
     <div class="chips" id="sensChips" role="group" aria-label="Filtrar por tipo de sensor"></div>
@@ -489,6 +490,7 @@ body.compact .kpi .kv{font-size:24px}
   </div>
   <div class="list" id="all"><div class="empty">Aguardando dados…</div></div>
   <p class="sens-nota">Barra: faixa entre o mínimo e o máximo registrados desde que o LibreHardwareMonitor abriu; o ponto marca o valor atual. Em sensores de uso, a barra mostra o percentual.</p>
+  </div>
 </section>
 
 <footer>
@@ -1333,7 +1335,8 @@ body.compact .kpi .kv{font-size:24px}
       if (!vazio) { vazio = document.createElement('div'); vazio.id = 'sensVazio'; vazio.className = 'empty'; $('all').appendChild(vazio); }
       vazio.textContent = 'Nenhum sensor corresponde ao filtro.';
     } else if (vazio) vazio.remove();
-    setText('sensCount', filtroAtivo() ? vis + ' de ' + total + ' sensores' : total + ' sensores · atual, mínimo e máximo');
+    var nComp = document.querySelectorAll('#all details.hw').length;
+    setText('sensCount', filtroAtivo() ? vis + ' de ' + total + ' sensores' : nComp + ' componentes · ' + total + ' sensores');
   }
 
   function renderAll(hws) {
@@ -1351,6 +1354,19 @@ body.compact .kpi .kv{font-size:24px}
     if (d.open) openSet[d.dataset.key] = 1; else delete openSet[d.dataset.key];
     try { localStorage.setItem('mh-open', JSON.stringify(openSet)); } catch (err) {}
   }, true);
+  var sensAberto = false;
+  try { sensAberto = localStorage.getItem('mh-sens-aberto') === '1'; } catch (e) {}
+  function abrirSensores(v) {
+    $('sensAlternar').setAttribute('aria-expanded', String(v));
+    $('sensCorpo').hidden = !v;
+    if (v && last) render(last, true);
+  }
+  abrirSensores(sensAberto);
+  $('sensAlternar').addEventListener('click', function () {
+    sensAberto = !sensAberto;
+    abrirSensores(sensAberto);
+    try { localStorage.setItem('mh-sens-aberto', sensAberto ? '1' : '0'); } catch (e) {}
+  });
   $('sensBusca').addEventListener('input', function () { busca = this.value.trim().toLowerCase(); aplicarFiltro(); });
   $('sensChips').addEventListener('click', function (e) {
     var b = e.target.closest('.chip');
@@ -1381,7 +1397,7 @@ body.compact .kpi .kv{font-size:24px}
     var w = (isNaN(resumo.cpuW) ? 0 : resumo.cpuW) + (isNaN(resumo.gpuW) ? 0 : resumo.gpuW);
     setText('kPow', isNaN(resumo.cpuW) && isNaN(resumo.gpuW) ? '—' : fmt(w));
     setText('kPowC', fmt(resumo.cpuW)); setText('kPowG', fmt(resumo.gpuW));
-    if (!compacto) { renderFans(p.hws); renderAll(p.hws); }
+    if (!compacto) { renderFans(p.hws); if (sensAberto || !sensSig) renderAll(p.hws); }
     noPush = false;
   }
 

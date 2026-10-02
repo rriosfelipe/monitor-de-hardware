@@ -13,7 +13,7 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
   - Medidores de anel duplo: o anel externo é a temperatura, o interno é o uso.
   - Gráficos de histórico com temperatura e uso, em períodos de 1, 5 ou 15 minutos, com o valor de cada momento ao passar o mouse. O servidor guarda os últimos 15 minutos, então o gráfico já abre preenchido.
   - Clock e uso por núcleo, em seção recolhível.
-  - **Todos os sensores:** busca por nome, filtro por tipo e, em cada sensor, uma barra com a faixa mínimo–máximo e um ponto no valor atual.
+  - **Todos os sensores** (seção recolhível): busca por nome, filtro por tipo e, em cada sensor, uma barra com a faixa mínimo–máximo e um ponto no valor atual.
   - **Modo compacto:** só a faixa de resumo, para deixar a janela pequena num canto ou num segundo monitor.
 - **Ícone na bandeja.** Mostra a temperatura mais alta entre CPU e GPU, na cor da faixa de temperatura. Uma faixinha embaixo do número indica de quem ele é: azul para CPU, roxa para GPU. Dá para trocar para só CPU, só GPU ou alternar entre as duas.
 - **Uso por programa.** Os programas que mais usam a CPU (com a RAM de cada um) e a GPU (com o tipo de trabalho e a VRAM). As fontes são as mesmas do Gerenciador de Tarefas.

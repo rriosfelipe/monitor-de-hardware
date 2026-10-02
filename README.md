@@ -1,145 +1,145 @@
 # Monitor de Hardware
 
-A local hardware monitor for Windows. It is a live dashboard of every sensor in your PC (CPU, GPU, RAM, drives, fans, network, voltages), opened in its own window, plus a system tray icon that shows your hottest component's temperature. It also sends Windows notifications when something needs attention and keeps a 30-day history.
+*Read in English: [README.en.md](README.en.md).*
 
-It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor), which reads the sensors. This project adds the dashboard, tray icon, alerts, per-program usage, disk health and long-term logging. It uses only PowerShell 5.1, a few lines of C# compiled on the fly, and plain HTML/JS, so there is nothing to build or install besides LibreHardwareMonitor.
+Monitor de hardware local para Windows. Ele mostra, ao vivo, todos os sensores do PC (CPU, GPU, RAM, discos, ventoinhas, rede e tensões) num painel com janela própria, e mantém um ícone na bandeja com a temperatura do componente mais quente. Também avisa por notificação do Windows quando algo precisa de atenção e guarda um histórico de 30 dias.
 
-> **Language:** the user interface, notifications and CSV headers are in **Brazilian Portuguese**. UI labels below appear as they do on screen, with an English translation where it helps.
+Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor). Este projeto acrescenta o painel, o ícone da bandeja, os alertas, o uso por programa, a saúde dos discos e o registro de longo prazo. Usa só PowerShell 5.1, um pouco de C# compilado na hora e HTML/JS simples. Não há nada para compilar nem instalar além do LibreHardwareMonitor.
 
-## Features
+## Funcionalidades
 
-- **Dashboard in its own window.** Edge app mode, with no tabs or address bar.
-  - Summary strip at the top: CPU, GPU, RAM, VRAM, power, hottest drive and network.
-  - Dual-ring gauges: outer ring is temperature, inner ring is load.
-  - History charts with temperature and load, over 1, 5 or 15 minutes, with hover tooltips.
-  - Per-core clocks and load (collapsible).
-  - **All sensors:** a searchable, filterable list with a min–max range bar for every sensor.
-  - **Compact mode** (*Compacto*): only the summary strip, for a small window or a second screen.
-- **Tray icon.** Shows the hotter of CPU and GPU, colored by temperature band. A thin stripe under the number tells you which one it is: blue for CPU, purple for GPU. You can switch it to CPU only, GPU only or alternating.
-- **Per-program usage.** The programs using the most CPU (with RAM) and the most GPU (with engine type and VRAM). Same data sources as Task Manager.
-- **Alerts** as Windows notifications, with cooldowns:
+- **Painel em janela própria.** Modo aplicativo do Edge, sem abas nem barra de endereço.
+  - Faixa de resumo no topo: CPU, GPU, RAM, VRAM, energia, disco mais quente e rede.
+  - Medidores de anel duplo: o anel externo é a temperatura, o interno é o uso.
+  - Gráficos de histórico com temperatura e uso, em períodos de 1, 5 ou 15 minutos, com o valor de cada momento ao passar o mouse. O servidor guarda os últimos 15 minutos, então o gráfico já abre preenchido.
+  - Clock e uso por núcleo, em seção recolhível.
+  - **Todos os sensores:** busca por nome, filtro por tipo e, em cada sensor, uma barra com a faixa mínimo–máximo e um ponto no valor atual.
+  - **Modo compacto:** só a faixa de resumo, para deixar a janela pequena num canto ou num segundo monitor.
+- **Ícone na bandeja.** Mostra a temperatura mais alta entre CPU e GPU, na cor da faixa de temperatura. Uma faixinha embaixo do número indica de quem ele é: azul para CPU, roxa para GPU. Dá para trocar para só CPU, só GPU ou alternar entre as duas.
+- **Uso por programa.** Os programas que mais usam a CPU (com a RAM de cada um) e a GPU (com o tipo de trabalho e a VRAM). As fontes são as mesmas do Gerenciador de Tarefas.
+- **Alertas** por notificação do Windows:
 
-  | Alert | Trigger |
-  |---|---|
-  | CPU or GPU hot | above the "hot" limit for 10 s |
-  | Drive hot | above the drive limit for 30 s (NVMe drives use the manufacturer's warning temperature) |
-  | SSD wear | life below 70 % |
-  | SSD spare exhausted | available spare at the manufacturer's threshold |
-  | Old HDD | more than 40,000 power-on hours |
-  | Memory | committed memory above 90 % of the limit |
-  | Monitor stalled | LibreHardwareMonitor not responding for 1 min |
+  | Alerta | Quando | Repete |
+  |---|---|---|
+  | CPU ou GPU quente | acima do limite "quente" por 10 s | a cada 30 min por episódio; 1 h se persistir |
+  | Disco quente | acima do limite de disco por 30 s (nos NVMe, vale o limite gravado pelo fabricante) | 6 h por episódio; 1 dia se persistir |
+  | Vida útil do SSD | abaixo de 70 % | 1 vez por semana |
+  | Reserva do SSD esgotada | chegou ao mínimo do fabricante | 1 vez por dia |
+  | HD antigo | mais de 40 mil horas ligado | 1 vez por semana |
+  | Memória quase no limite | memória confirmada acima de 90 % do limite por 30 s | 30 min |
+  | Monitor sem leituras | LibreHardwareMonitor parado por 1 min | 1 h |
 
-  Several alerts at once are merged into a single notification. Active alerts also appear as banners in the dashboard, and each can be dismissed until the next time you open it.
-- **Disk health.** For each drive: its letter (C:, D:…), type (HDD, SSD or NVMe), remaining life, power-on time, and a highlighted note when action is needed.
-- **Enable/disable external HDDs.** Puts a USB drive *offline* in Windows, or back online, with one click. That stops all access to it without unplugging. Before disabling, it warns about programs using the drive and **qBittorrent torrents** saved on it, then flushes pending writes. The Windows administrator prompt is required.
-- **30-day log.** One line per minute (average and peak) in daily CSV files that open directly in Excel. The dashboard shows 24-hour, 7-day and 30-day charts, peak values with date and time, and the energy used by CPU and GPU.
-- **Settings** (*Ajustes*): color themes, every interface color, temperature bands, the drive temperature limit, and alerts on or off.
+  Vários alertas ao mesmo tempo viram uma notificação só, e clicar nela abre o painel. Os alertas ativos também aparecem em faixas no topo do painel. Cada um pode ser dispensado até a próxima vez que o painel for aberto; um alerta novo aparece mesmo assim.
+- **Saúde dos discos.** Para cada disco: letra da unidade (C:, D:…), tipo (HD, SSD ou NVMe), vida útil restante, tempo ligado e uma nota em destaque quando há algo a fazer.
+- **Desativar e ativar HDs externos.** Coloca um disco USB *offline* no Windows, ou de volta online, com um clique. O Windows para de acessá-lo sem precisar desconectar o cabo, e **nada é apagado**. Antes de desativar, o painel avisa sobre programas usando o disco e **torrents do qBittorrent** salvos nele, e grava o que estiver pendente. Exige a confirmação de administrador do Windows.
+- **Registro de 30 dias.** Uma linha por minuto (média e pico) em arquivos CSV diários, que abrem direto no Excel. O painel mostra gráficos de 24 horas, 7 dias e 30 dias, os picos do período com dia e hora, e a energia gasta por CPU e GPU.
+- **Ajustes:** temas de cores, cada cor da interface, as faixas de temperatura, o limite de temperatura dos discos e as notificações ligadas ou desligadas.
 
-## Requirements
+## Requisitos
 
-- Windows 10 or 11, with Windows PowerShell 5.1 and Microsoft Edge (both included in Windows).
-- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor), tested with 0.9.6, **running as administrator**. Without admin rights, the CPU, motherboard and fan sensors are missing.
+- Windows 10 ou 11, com Windows PowerShell 5.1 e Microsoft Edge (ambos já vêm no Windows).
+- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor), testado com a 0.9.6, **rodando como administrador**. Sem isso, faltam os sensores de CPU, placa-mãe e ventoinhas.
 
-## Setup
+## Instalação
 
-1. **Install LibreHardwareMonitor:**
+1. **Instale o LibreHardwareMonitor:**
    ```powershell
    winget install LibreHardwareMonitor.LibreHardwareMonitor
    ```
-2. **Run it as administrator** and accept the PawnIO driver install on first launch.
-3. **In LibreHardwareMonitor › Options**, enable:
-   - **Remote Web Server › Run** (default port 8085). If Windows Firewall asks, you can deny it: the dashboard reads from `localhost`.
-   - **Run On Windows Startup**, **Start Minimized** and **Minimize To Tray** (recommended).
-   - Then close it once with **File › Exit** so these settings are saved.
-4. **Clone this repository** and double-click `Iniciar monitor.bat`. The tray icon appears and the dashboard opens.
+2. **Abra-o como administrador** e aceite a instalação do driver PawnIO na primeira vez.
+3. **No LibreHardwareMonitor, em Options**, ative:
+   - **Remote Web Server › Run** (porta padrão 8085). Se o Firewall do Windows perguntar, pode negar: o painel lê os dados pelo `localhost`.
+   - **Run On Windows Startup**, **Start Minimized** e **Minimize To Tray** (recomendado).
+   - Depois, feche-o uma vez por **File › Exit**, para que essas opções sejam gravadas.
+4. **Clone este repositório** e dê dois cliques em `Iniciar monitor.bat`. O ícone aparece na bandeja e o painel abre.
 
-### Desktop shortcut and start with Windows (optional)
+### Atalho na área de trabalho e início com o Windows (opcional)
 
-For a shortcut without a console window, point it at:
-
-```text
-powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "<repo folder>\servidor.ps1"
-```
-
-and set `monitor.ico` as its icon.
-
-To start the tray icon at logon without opening the window, place a shortcut in `shell:startup` with:
+Para um atalho sem janela de console, aponte-o para:
 
 ```text
-powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "<repo folder>\servidor.ps1" -NaoAbrirNavegador -SemLHM
+powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "<pasta do repositório>\servidor.ps1"
 ```
 
-`-SemLHM` skips launching LibreHardwareMonitor, which already starts on its own. Without it, a UAC prompt could appear at logon.
+e use o `monitor.ico` como ícone.
 
-## Usage
-
-- **Left-click the tray icon** to open the dashboard. If the dashboard is already open, it is brought to the front.
-- **Right-click the tray icon** for a CPU/GPU/RAM summary and these options:
-  - *Notificações de alerta*: alerts on or off.
-  - *Ícone mostra*: what the icon shows.
-  - *Abrir LibreHardwareMonitor*: open LibreHardwareMonitor.
-  - *Encerrar monitor*: quit.
-- Closing the dashboard window keeps monitoring in the tray.
-
-### Command-line options for `servidor.ps1`
-
-| Option | Purpose |
-|---|---|
-| `-Porta 8100` | Serve the dashboard on another port (default `8099`) |
-| `-Fonte <url or file>` | Read LibreHardwareMonitor from another URL, or from a JSON file for testing |
-| `-NaoAbrirNavegador` | Start without opening the dashboard window |
-| `-SemLHM` | Do not launch LibreHardwareMonitor |
-| `-CaminhoLHM <path>` | Path to `LibreHardwareMonitor.exe`, if not installed via winget |
-
-## How it works
+Para o ícone da bandeja iniciar ao entrar no Windows, sem abrir a janela, coloque um atalho em `shell:startup` com:
 
 ```text
-LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ──(localhost:8099)──► dashboard (Edge app window)
-   (admin, sensors)                                   │  tray icon, alerts, history
-                                                      ├─ Processos.cs  per-program CPU/GPU (PDH API)
-                                                      └─ Registro.cs   per-minute CSV log, 30 days
+powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "<pasta do repositório>\servidor.ps1" -NaoAbrirNavegador -SemLHM
 ```
 
-| File | Role |
+O `-SemLHM` evita abrir o LibreHardwareMonitor, que já inicia sozinho. Sem ele, poderia aparecer um pedido de confirmação de administrador ao entrar no Windows.
+
+## Uso
+
+- **Clique no ícone da bandeja** para abrir o painel. Se ele já estiver aberto, a janela vem para frente.
+- **Botão direito no ícone** mostra um resumo de CPU, GPU e RAM e as opções:
+  - **Notificações de alerta**: liga ou desliga os alertas.
+  - **Ícone mostra**: o que aparece no ícone.
+  - **Abrir LibreHardwareMonitor**.
+  - **Encerrar monitor**.
+- Fechar a janela do painel não encerra o monitor; ele continua na bandeja.
+
+### Opções de linha de comando do `servidor.ps1`
+
+| Opção | Para quê |
 |---|---|
-| `servidor.ps1` | Tray app and local HTTP server. Relays sensor data, evaluates alerts, keeps a 15-minute history buffer, queries drive letters and disk state in the background, and enables/disables external drives through an elevated `Set-Disk`. |
-| `index.html` | The whole dashboard (HTML, CSS and JS in one file). |
-| `Processos.cs` | Per-program CPU time and GPU engine/VRAM usage. It uses the native PDH API, because `Get-Counter` is far too slow with hundreds of GPU counter instances. |
-| `Registro.cs` | Per-minute aggregation, daily CSV files, retention, and downsampled series for the charts. |
-| `Iniciar monitor.bat` | Starts `servidor.ps1` hidden. |
+| `-Porta 8100` | Servir o painel em outra porta (padrão `8099`) |
+| `-Fonte <url ou arquivo>` | Ler o LibreHardwareMonitor de outro endereço, ou de um arquivo JSON para testes |
+| `-NaoAbrirNavegador` | Iniciar sem abrir a janela do painel |
+| `-SemLHM` | Não abrir o LibreHardwareMonitor |
+| `-CaminhoLHM <caminho>` | Caminho do `LibreHardwareMonitor.exe`, se não foi instalado pelo winget |
 
-Files created at runtime, kept out of git by `.gitignore`:
+## Como funciona
 
-| File | Contents |
+```text
+LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ──(localhost:8099)──► painel (janela do Edge)
+   (administrador, sensores)                          │  ícone da bandeja, alertas, histórico
+                                                      ├─ Processos.cs  CPU/GPU por programa (API PDH)
+                                                      └─ Registro.cs   registro por minuto em CSV, 30 dias
+```
+
+| Arquivo | Papel |
 |---|---|
-| `config.json` | Colors, temperature bands, alert and icon settings |
-| `alertas-estado.json` | When each alert was last shown, so alerts don't repeat at every boot |
-| `letras-ultimas.json` | Last known letter of each drive, still shown while a drive is disabled |
-| `registros/` | Daily CSV logs: `YYYY-MM-DD.csv` and `discos-YYYY-MM-DD.csv`. They use `;` as separator and a decimal comma (Brazilian Excel format), about 0.8 MB per day. |
+| `servidor.ps1` | Programa da bandeja e servidor HTTP local. Repassa os dados dos sensores, avalia os alertas, guarda 15 minutos de histórico, consulta em segundo plano as letras e o estado dos discos, e ativa ou desativa discos externos com um `Set-Disk` elevado. |
+| `index.html` | O painel inteiro (HTML, CSS e JS num arquivo só). |
+| `Processos.cs` | Tempo de CPU por programa e uso de GPU (motor e VRAM). Usa a API nativa PDH, porque o `Get-Counter` é lento demais com as centenas de instâncias dos contadores de GPU. |
+| `Registro.cs` | Agregação por minuto, arquivos CSV diários, limpeza dos antigos e séries resumidas para os gráficos. |
+| `Iniciar monitor.bat` | Inicia o `servidor.ps1` escondido. |
 
-### HTTP endpoints (localhost only)
+Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 
-| Endpoint | Description |
+| Arquivo | Conteúdo |
 |---|---|
-| `GET /` | Dashboard |
-| `GET /dados` | Raw LibreHardwareMonitor JSON (relayed, with a short cache) |
-| `GET /historico` | Last 15 minutes of CPU/GPU temperature and load |
-| `GET /registro?dias=1\|7\|30` | Downsampled long-term series and period summary |
-| `GET /processos` | Top programs by CPU and GPU |
-| `GET /alertas` | Active alerts |
-| `GET /letras`, `GET /discos-estado` | Drive letters, disk state and the last enable/disable action |
-| `GET /disco-uso?n=<disk>` | What is using a drive (processes, qBittorrent torrents) |
-| `GET/POST /config` | Read or save settings |
-| `POST /discos-estado` | Enable or disable an external drive |
-| `POST /abrir-registros` | Open the CSV folder in Explorer |
+| `config.json` | Cores, faixas de temperatura e opções de alertas e do ícone. Apagar volta ao padrão. |
+| `alertas-estado.json` | Quando cada alerta foi mostrado, para não repetir a cada inicialização. Apagar zera esse controle. |
+| `letras-ultimas.json` | Última letra conhecida de cada disco, mostrada enquanto ele estiver desativado. |
+| `registros/` | Registros diários: `AAAA-MM-DD.csv` (CPU, GPU, uso, potência, RAM) e `discos-AAAA-MM-DD.csv` (temperatura de cada disco). Separador `;` e vírgula decimal, como no Excel brasileiro. Cerca de 0,8 MB por dia; os arquivos com mais de 30 dias são apagados sozinhos. |
 
-## Security notes
+### Endereços HTTP (só no localhost)
 
-- The server registers only `http://localhost:8099/` with Windows (HTTP.sys), and Windows Firewall blocks inbound connections to it by default. It is not meant to be reached from other devices.
-- State-changing requests (`POST`) are accepted only from the dashboard's own origin and only with a JSON body. That blocks other websites from triggering them through your browser.
-- Enabling and disabling drives is limited to USB drives. The server refuses system/boot disks and any disk holding a page file, and every action still requires the Windows administrator prompt.
-- LibreHardwareMonitor's own web server accepts connections from the network, which is why Windows Firewall asks about it. Deny that prompt (or block port 8085) if you don't want other devices to read your sensors. The dashboard keeps working because it reads from `localhost`.
+| Endereço | Descrição |
+|---|---|
+| `GET /` | Painel |
+| `GET /dados` | JSON do LibreHardwareMonitor, repassado com um cache curto |
+| `GET /historico` | Últimos 15 minutos de temperatura e uso de CPU e GPU |
+| `GET /registro?dias=1\|7\|30` | Série resumida do registro e o resumo do período |
+| `GET /processos` | Programas que mais usam CPU e GPU |
+| `GET /alertas` | Alertas ativos |
+| `GET /letras`, `GET /discos-estado` | Letras das unidades, estado dos discos e a última ação de ativar ou desativar |
+| `GET /disco-uso?n=<disco>` | O que está usando um disco (programas e torrents do qBittorrent) |
+| `GET/POST /config` | Lê ou grava os ajustes |
+| `POST /discos-estado` | Ativa ou desativa um disco externo |
+| `POST /abrir-registros` | Abre a pasta dos CSV no Explorer |
 
-## License
+## Segurança
 
-[MIT](LICENSE). LibreHardwareMonitor is a separate project under its own license (MPL-2.0); it is not included in this repository.
+- O servidor registra no Windows (HTTP.sys) apenas o endereço `http://localhost:8099/`, e o Firewall do Windows bloqueia conexões de entrada para ele por padrão. Ele não foi feito para ser acessado de outros aparelhos.
+- Pedidos que mudam algo (`POST`) só são aceitos vindos do próprio painel e com corpo em JSON. Isso impede que outros sites os disparem pelo seu navegador.
+- Ativar e desativar discos vale só para discos USB. O servidor recusa o disco do sistema e qualquer disco com arquivo de paginação, e toda ação ainda passa pela confirmação de administrador do Windows.
+- O servidor web do próprio LibreHardwareMonitor aceita conexões da rede; é por isso que o Firewall do Windows pergunta sobre ele. Negue esse pedido (ou bloqueie a porta 8085) se não quiser que outros aparelhos leiam seus sensores. O painel continua funcionando, porque lê pelo `localhost`.
+
+## Licença
+
+[MIT](LICENSE). O LibreHardwareMonitor é um projeto à parte, com licença própria (MPL-2.0), e não faz parte deste repositório.

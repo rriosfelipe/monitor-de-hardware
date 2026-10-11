@@ -1513,7 +1513,9 @@ body.compact .kpi .kv{font-size:24px}
     if (v) {
       acertarLargura = true;
       setTimeout(function () { acertarLargura = false; }, 2000);
-      encaixarCompacto(true);
+      // Só guarda o tamanho para restaurar se a janela ainda estiver grande: ao recarregar a página
+      // já em modo compacto, o tamanho atual é o compacto e não serve como "anterior".
+      encaixarCompacto(window.innerWidth > COMPACTO_LARGURA + 100);
     } else {
       pedirJanela({ restaurar: true }).then(function (r) {
         // sem tamanho guardado (ex.: o monitor reiniciou): volta ao tamanho padrão

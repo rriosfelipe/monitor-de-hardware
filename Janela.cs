@@ -23,6 +23,27 @@ namespace MonitorHW
 
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
 
+        [StructLayout(LayoutKind.Sequential)]
+        struct MONITORINFO { public int Tam; public RECT Monitor, Trabalho; public uint Flags; }
+        [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
+        [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO i);
+
+        // Move e redimensiona sem deixar a janela maior que a área de trabalho do monitor nem fora dela.
+        static void Posicionar(IntPtr h, int x, int y, int largura, int altura)
+        {
+            var i = new MONITORINFO();
+            i.Tam = Marshal.SizeOf(typeof(MONITORINFO));
+            if (GetMonitorInfo(MonitorFromWindow(h, 2), ref i))   // MONITOR_DEFAULTTONEAREST
+            {
+                RECT t = i.Trabalho;
+                largura = Math.Min(largura, t.R - t.L);
+                altura = Math.Min(altura, t.B - t.T);
+                x = Math.Max(t.L, Math.Min(x, t.R - largura));
+                y = Math.Max(t.T, Math.Min(y, t.B - altura));
+            }
+            SetWindowPos(h, IntPtr.Zero, x, y, largura, altura, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+
         // Só a janela ativa, e só se o título for exatamente o do painel: o clique veio dela mesma.
         // (Uma aba comum do navegador com o painel aberto tem outra janela ativa e não mexe em nada.)
         static IntPtr Achar(string titulo)
@@ -44,8 +65,7 @@ namespace MonitorHW
             RECT r;
             GetWindowRect(h, out r);
             if (guardar && !temSalvo) { salvo = r; salvoMax = max; temSalvo = true; }
-            int x = r.R - largura;
-            SetWindowPos(h, IntPtr.Zero, Math.Max(0, x), r.T, largura, altura, SWP_NOZORDER | SWP_NOACTIVATE);
+            Posicionar(h, r.R - largura, r.T, largura, altura);
             return "ok";
         }
 
@@ -60,7 +80,7 @@ namespace MonitorHW
             GetWindowRect(h, out r);
             if (guardar && !temSalvo) { salvo = r; salvoMax = max; temSalvo = true; }
             int largura = Math.Max(200, r.R - r.L + dLargura), altura = Math.Max(150, r.B - r.T + dAltura);
-            SetWindowPos(h, IntPtr.Zero, Math.Max(0, r.R - largura), r.T, largura, altura, SWP_NOZORDER | SWP_NOACTIVATE);
+            Posicionar(h, r.R - largura, r.T, largura, altura);
             return "ok";
         }
 
@@ -69,7 +89,7 @@ namespace MonitorHW
             if (!temSalvo) return "nada";
             IntPtr h = Achar(titulo);
             if (h == IntPtr.Zero) return "janela não encontrada";
-            SetWindowPos(h, IntPtr.Zero, salvo.L, salvo.T, salvo.R - salvo.L, salvo.B - salvo.T, SWP_NOZORDER | SWP_NOACTIVATE);
+            Posicionar(h, salvo.L, salvo.T, salvo.R - salvo.L, salvo.B - salvo.T);
             if (salvoMax) ShowWindow(h, 3);   // SW_MAXIMIZE
             temSalvo = false;
             return "ok";

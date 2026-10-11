@@ -71,6 +71,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "<pa
 
 O `-SemLHM` evita abrir o LibreHardwareMonitor, que já inicia sozinho. Sem ele, poderia aparecer um pedido de confirmação de administrador ao entrar no Windows.
 
+### SMART pelo CrystalDiskInfo (opcional)
+
+Em alguns notebooks o SSD NVMe fica atrás do controlador Intel RST VMD, e o LibreHardwareMonitor devolve o SMART zerado (0 °C, 0 h ligado). O card do disco mostra então **SMART indisponível**. Para ter os valores reais:
+
+1. Instale o CrystalDiskInfo: `winget install CrystalDewWorld.CrystalDiskInfo`
+2. Rode `instalar-smart.ps1` (pede administrador uma vez). Ele cria a tarefa agendada **Monitor de Hardware - SMART**, que roda o CrystalDiskInfo em segundo plano a cada 5 minutos e regrava o relatório `DiskInfo.txt`.
+
+O painel passa a usar esse relatório só nos discos NVMe com leitura zerada, e marca o card com **via CDI**. Um relatório com mais de 30 minutos é ignorado. Para desfazer: `instalar-smart.ps1 -Remover`.
+
 ## Uso
 
 - **Clique no ícone da bandeja** para abrir o painel. Se ele já estiver aberto, a janela vem para frente.
@@ -90,6 +99,7 @@ O `-SemLHM` evita abrir o LibreHardwareMonitor, que já inicia sozinho. Sem ele,
 | `-NaoAbrirNavegador` | Iniciar sem abrir a janela do painel |
 | `-SemLHM` | Não abrir o LibreHardwareMonitor |
 | `-CaminhoLHM <caminho>` | Caminho do `LibreHardwareMonitor.exe`, se não foi instalado pelo winget |
+| `-RelatorioSmart <caminho>` | Caminho do `DiskInfo.txt` do CrystalDiskInfo, se ele não está em `Arquivos de Programas` |
 
 ## Como funciona
 
@@ -108,6 +118,7 @@ LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ─�
 | `Processos.cs` | Tempo de CPU por programa e uso de GPU (motor e VRAM). Usa a API nativa PDH, porque o `Get-Counter` é lento demais com as centenas de instâncias dos contadores de GPU. |
 | `Registro.cs` | Agregação por minuto, arquivos CSV diários, limpeza dos antigos e séries resumidas para os gráficos. |
 | `Iniciar monitor.bat` | Inicia o `servidor.ps1` escondido. |
+| `instalar-smart.ps1` | Cria ou remove a tarefa agendada que faz o CrystalDiskInfo gravar o relatório SMART (opcional). |
 
 Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 
@@ -128,6 +139,8 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `GET /registro?dias=1\|7\|30` | Série resumida do registro e o resumo do período |
 | `GET /processos` | Programas que mais usam CPU e GPU |
 | `GET /alertas` | Alertas ativos |
+| `GET /memoria` | Velocidade configurada da RAM, informada pelo Windows |
+| `GET /smart` | SMART lido pelo CrystalDiskInfo, por número de disco |
 | `GET /letras`, `GET /discos-estado` | Letras das unidades, estado dos discos e a última ação de ativar ou desativar |
 | `GET /disco-uso?n=<disco>` | O que está usando um disco (programas e torrents do qBittorrent) |
 | `GET/POST /config` | Lê ou grava os ajustes |

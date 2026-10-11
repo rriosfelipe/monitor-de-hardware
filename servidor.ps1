@@ -11,7 +11,9 @@ param(
     # Não abrir o LibreHardwareMonitor (usado na inicialização do Windows, onde ele já sobe sozinho).
     [switch]$SemLHM,
     # Executável do LibreHardwareMonitor, aberto como administrador se não estiver rodando.
-    [string]$CaminhoLHM = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\LibreHardwareMonitor.LibreHardwareMonitor_Microsoft.Winget.Source_8wekyb3d8bbwe\LibreHardwareMonitor.exe"
+    [string]$CaminhoLHM = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\LibreHardwareMonitor.LibreHardwareMonitor_Microsoft.Winget.Source_8wekyb3d8bbwe\LibreHardwareMonitor.exe",
+    # Relatório do CrystalDiskInfo, regravado pela tarefa agendada de instalar-smart.ps1.
+    [string]$RelatorioSmart = "$env:ProgramFiles\CrystalDiskInfo\DiskInfo.txt"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -237,6 +239,10 @@ function Atender($ctx) {
                     if (-not $script:janelaOk -or -not $titulo.StartsWith('Monitor de Hardware · ')) { throw 'recusado' }
                     if ($o.restaurar -eq $true) {
                         $r = [MonitorHW.Janela]::Restaurar($titulo)
+                    } elseif ($null -ne $o.dAltura) {
+                        $dl = [int]$o.dLargura; $da = [int]$o.dAltura
+                        if ([math]::Abs($dl) -gt 8000 -or [math]::Abs($da) -gt 8000) { throw 'tamanho inválido' }
+                        $r = [MonitorHW.Janela]::AjustarDelta($titulo, $dl, $da, ($o.naoGuardar -ne $true))
                     } else {
                         $l = [int]$o.largura; $a = [int]$o.altura
                         if ($l -lt 200 -or $l -gt 8000 -or $a -lt 150 -or $a -gt 8000) { throw 'tamanho inválido' }
@@ -247,6 +253,12 @@ function Atender($ctx) {
             }
             '/letras' {
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes($script:letrasJson))
+            }
+            '/memoria' {
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes("{""freq"":$($script:ramFreq)}"))
+            }
+            '/smart' {
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((Json-Smart)))
             }
             '/alertas' {
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((Json-Alertas)))
@@ -285,6 +297,57 @@ function Numero([string]$s) {
 }
 $padraoHw = [regex]'"Text":"([^"]*)","Min":"","Value":"","Max":"","HardwareId":"([^"]*)"'
 $NaN = [double]::NaN
+
+# SMART lido pelo CrystalDiskInfo, por número de disco. Cobre NVMe cujo SMART o LibreHardwareMonitor
+# devolve zerado (disco atrás do Intel RST VMD). Só vale enquanto o relatório for recente.
+$script:smart = @{}
+$script:smartChave = ''
+function Ler-Smart {
+    if (-not (Test-Path -LiteralPath $RelatorioSmart)) { return @{} }
+    $hora = (Get-Item -LiteralPath $RelatorioSmart).LastWriteTime
+    if (((Get-Date) - $hora).TotalMinutes -gt 30) { return @{} }
+    $chave = "$($hora.Ticks)|$($script:letrasJson)"
+    if ($chave -eq $script:smartChave) { return $script:smart }
+    try { $linhas = [System.IO.File]::ReadAllLines($RelatorioSmart) } catch { return $script:smart }
+    $novo = @{}
+    $nvme = $false; $n = $null; $d = $null
+    foreach ($l in $linhas) {
+        if ($l -match '^\s*Model : ') { $nvme = $false; $n = $null; $d = $null; continue }
+        if ($l -match '^\s*Interface : NVM Express') { $nvme = $true; continue }
+        $m = [regex]::Match($l, '^\s*Drive Letter : ([A-Za-z]:)')
+        if ($m.Success -and $nvme) {
+            $n = $script:letrasMapa.Keys | Where-Object { ($script:letrasMapa[$_] -split ' ') -contains $m.Groups[1].Value.ToUpper() } | Select-Object -First 1
+            if ($null -ne $n) {
+                $d = @{ temp = $NaN; vida = $NaN; reserva = $NaN; reservaMin = $NaN; horas = $NaN; hora = $hora.ToString('HH:mm') }
+                $novo[[string]$n] = $d
+            }
+            continue
+        }
+        # Atributos do log de saúde NVMe: identificador e valor bruto em hexadecimal.
+        $m = [regex]::Match($l, '^([0-9A-F]{2}) ([0-9A-F]{12}) ')
+        if ($m.Success -and $d) {
+            $v = [double][Convert]::ToInt64($m.Groups[2].Value, 16)
+            switch ($m.Groups[1].Value) {
+                '02' { if ($v -gt 273 -and $v -lt 400) { $d.temp = $v - 273 } }
+                '03' { $d.reserva = $v }
+                '04' { $d.reservaMin = $v }
+                '05' { $d.vida = [math]::Max(0, 100 - $v) }
+                '0C' { $d.horas = $v }
+            }
+        }
+    }
+    $script:smart = $novo
+    $script:smartChave = $chave
+    return $novo
+}
+function Json-Smart {
+    $s = Ler-Smart
+    $itens = foreach ($n in $s.Keys) {
+        $d = $s[$n]
+        """$n"":{""temp"":$(Json-Num $d.temp),""vida"":$(Json-Num $d.vida),""reserva"":$(Json-Num $d.reserva),""reservaMin"":$(Json-Num $d.reservaMin),""horas"":$(Json-Num $d.horas),""hora"":""$($d.hora)""}"
+    }
+    return '{' + (@($itens) -join ',') + '}'
+}
 function Ler-Resumo {
     $texto = $utf8.GetString((Obter-Dados))
     $r = @{ cpu = $NaN; cpuUso = $NaN; cpuW = $NaN; gpuW = $NaN; gpu = $NaN; gpuUso = $NaN; ramUsada = $NaN; ramLivre = $NaN; virtUsada = $NaN; virtLivre = $NaN; discos = @{} }
@@ -335,6 +398,13 @@ function Ler-Resumo {
         }
     }
     if ([double]::IsNaN($r.cpu) -and $cpuTemps.Count) { $r.cpu = ($cpuTemps | Measure-Object -Maximum).Maximum }
+    # SMART zerado no LibreHardwareMonitor (0 °C e 0 h juntos): usa a leitura do CrystalDiskInfo, se houver.
+    $smart = Ler-Smart
+    foreach ($hw in $r.discos.Keys) {
+        $d = $r.discos[$hw]
+        $s = $smart[($hw -replace '^.*/', '')]
+        if ($s -and $d.temp -eq 0 -and $d.horas -eq 0) { foreach ($k in 'temp', 'vida', 'reserva', 'reservaMin', 'horas') { $d[$k] = $s[$k] } }
+    }
     return $r
 }
 
@@ -472,6 +542,8 @@ function Guardar-Historico($r) {
 $script:letrasJson = '{}'
 $script:discosEstado = @()
 $script:paginacao = @()
+# Velocidade configurada dos pentes de memória (MT/s), para quando o LibreHardwareMonitor não informa o clock.
+$script:ramFreq = 0
 $arquivoUltimas = Join-Path $raiz 'letras-ultimas.json'
 $script:letrasUltimas = @{}
 if (Test-Path -LiteralPath $arquivoUltimas) {
@@ -497,6 +569,7 @@ function Letras-Tick {
                 if ($mudou) { try { [System.IO.File]::WriteAllText($arquivoUltimas, ($script:letrasUltimas | ConvertTo-Json -Compress), $utf8) } catch { } }
                 $script:discosEstado = @($o.discos)
                 $script:paginacao = @($o.paginacao)
+                $script:ramFreq = [int]$o.ramFreq
             }
         } catch { }
         $t.PS.Dispose()
@@ -518,7 +591,8 @@ function Letras-Tick {
                         offline = [bool]$_.IsOffline; sistema = ([bool]$_.IsSystem -or [bool]$_.IsBoot) }
         })
         $pag = @(Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue | ForEach-Object { $_.Name.Substring(0, 2).ToUpper() })
-        ConvertTo-Json -InputObject ([ordered]@{ letras = $m; discos = $discos; paginacao = $pag }) -Compress -Depth 4
+        $ram = (Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | Measure-Object ConfiguredClockSpeed -Maximum).Maximum
+        ConvertTo-Json -InputObject ([ordered]@{ letras = $m; discos = $discos; paginacao = $pag; ramFreq = [int]$ram }) -Compress -Depth 4
     })
     $script:letrasTarefa = @{ PS = $ps; Handle = $ps.BeginInvoke() }
 }

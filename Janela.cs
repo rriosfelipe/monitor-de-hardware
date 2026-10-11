@@ -49,6 +49,21 @@ namespace MonitorHW
             return "ok";
         }
 
+        // dLargura/dAltura: quanto somar ao tamanho atual, em pixels físicos. Mantém o canto superior direito no lugar.
+        public static string AjustarDelta(string titulo, int dLargura, int dAltura, bool guardar)
+        {
+            IntPtr h = Achar(titulo);
+            if (h == IntPtr.Zero) return "janela não encontrada";
+            bool max = IsZoomed(h);
+            if (max) ShowWindow(h, 9);   // SW_RESTORE
+            RECT r;
+            GetWindowRect(h, out r);
+            if (guardar && !temSalvo) { salvo = r; salvoMax = max; temSalvo = true; }
+            int largura = Math.Max(200, r.R - r.L + dLargura), altura = Math.Max(150, r.B - r.T + dAltura);
+            SetWindowPos(h, IntPtr.Zero, Math.Max(0, r.R - largura), r.T, largura, altura, SWP_NOZORDER | SWP_NOACTIVATE);
+            return "ok";
+        }
+
         public static string Restaurar(string titulo)
         {
             if (!temSalvo) return "nada";

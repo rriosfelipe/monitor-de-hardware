@@ -73,6 +73,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "<re
 
 `-SemLHM` skips launching LibreHardwareMonitor, which already starts on its own. Without it, a UAC prompt could appear at logon.
 
+### SMART through CrystalDiskInfo (optional)
+
+On some laptops the NVMe SSD sits behind the Intel RST VMD controller, and LibreHardwareMonitor returns zeroed SMART data (0 °C, 0 power-on hours). The drive card then shows *SMART indisponível*. To get the real values:
+
+1. Install CrystalDiskInfo: `winget install CrystalDewWorld.CrystalDiskInfo`
+2. Run `instalar-smart.ps1` (one UAC prompt). It creates the scheduled task **Monitor de Hardware - SMART**, which runs CrystalDiskInfo in the background every 5 minutes and rewrites its `DiskInfo.txt` report.
+
+The dashboard uses that report only for NVMe drives with a zeroed reading, and tags the card with *via CDI*. A report older than 30 minutes is ignored. To undo: `instalar-smart.ps1 -Remover`.
+
 ## Usage
 
 - **Left-click the tray icon** to open the dashboard. If the dashboard is already open, it is brought to the front.
@@ -92,6 +101,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "<re
 | `-NaoAbrirNavegador` | Start without opening the dashboard window |
 | `-SemLHM` | Do not launch LibreHardwareMonitor |
 | `-CaminhoLHM <path>` | Path to `LibreHardwareMonitor.exe`, if not installed via winget |
+| `-RelatorioSmart <path>` | Path to CrystalDiskInfo's `DiskInfo.txt`, if it is not under `Program Files` |
 
 ## How it works
 
@@ -110,6 +120,7 @@ LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ─�
 | `Processos.cs` | Per-program CPU time and GPU engine/VRAM usage. It uses the native PDH API, because `Get-Counter` is far too slow with hundreds of GPU counter instances. |
 | `Registro.cs` | Per-minute aggregation, daily CSV files, retention, and downsampled series for the charts. |
 | `Iniciar monitor.bat` | Starts `servidor.ps1` hidden. |
+| `instalar-smart.ps1` | Creates or removes the scheduled task that makes CrystalDiskInfo write the SMART report (optional). |
 
 Files created at runtime, kept out of git by `.gitignore`:
 
@@ -130,6 +141,8 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `GET /registro?dias=1\|7\|30` | Downsampled long-term series and period summary |
 | `GET /processos` | Top programs by CPU and GPU |
 | `GET /alertas` | Active alerts |
+| `GET /memoria` | Configured RAM speed, as reported by Windows |
+| `GET /smart` | SMART read by CrystalDiskInfo, per disk number |
 | `GET /letras`, `GET /discos-estado` | Drive letters, disk state and the last enable/disable action |
 | `GET /disco-uso?n=<disk>` | What is using a drive (processes, qBittorrent torrents) |
 | `GET/POST /config` | Read or save settings |

@@ -980,8 +980,9 @@ body.compact .kpi .kv{font-size:24px}
     var cap = dimms.map(function (h) { return toGB(find(h, 'Data', /capacity/i)); }).filter(function (v) { return !isNaN(v); });
     var cpuHw = family(hws, 'cpu')[0];
     var memClk = find(cpuHw, 'Clock', /^memory$/i);
-    setText('ramFreq', memClk && memClk.value > 0 ? fmt(memClk.value * 2) + ' MT/s' : '—');
-    $('ramFreq').title = memClk && memClk.value > 0 ? 'Clock real: ' + fmt(memClk.value) + ' MHz (DDR transfere 2 vezes por ciclo)' : '';
+    var temClk = memClk && memClk.value > 0;
+    setText('ramFreq', temClk ? fmt(memClk.value * 2) + ' MT/s' : ramFreqWin ? fmt(ramFreqWin) + ' MT/s' : '—');
+    $('ramFreq').title = temClk ? 'Clock real: ' + fmt(memClk.value) + ' MHz (DDR transfere 2 vezes por ciclo)' : ramFreqWin ? 'Velocidade configurada dos pentes, informada pelo Windows' : '';
     setText('ramDimms', dimms.length ? dimms.length + ' × ' + fmt(cap[0], 0) + ' GB' : '—');
     var u = toGB(used), a = toGB(avail);
     var total = u + a;
@@ -1012,6 +1013,25 @@ body.compact .kpi .kv{font-size:24px}
       letras = j; sensSig = '';
       if (last) render(last, true);
       if (regDados) desenharRegistro();
+    }).catch(function () {});
+  }
+  // Frequência da RAM informada pelo Windows: usada quando o LibreHardwareMonitor não tem o clock de memória
+  var ramFreqWin = 0;
+  function tickMemoria() {
+    if (ramFreqWin) return;
+    fetch('/memoria', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
+      if (!j.freq) return;
+      ramFreqWin = j.freq;
+      if (last) render(last, true);
+    }).catch(function () {});
+  }
+  // SMART lido pelo CrystalDiskInfo, por número de disco: usado quando o LibreHardwareMonitor devolve o SMART zerado
+  var smart = {};
+  function tickSmart() {
+    fetch('/smart', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
+      if (JSON.stringify(j) === JSON.stringify(smart)) return;
+      smart = j;
+      if (last) render(last, true);
     }).catch(function () {});
   }
   // Ativar/desativar HD externo (o servidor pede confirmação de administrador ao Windows)
@@ -1086,11 +1106,21 @@ body.compact .kpi .kv{font-size:24px}
       // 0 °C e 0 h juntos: a leitura SMART veio zerada, então os dados de saúde não valem.
       var semSmart = tv === 0 && horas === 0;
       if (semSmart) tv = NaN;
+      var sm = semSmart ? smart[numDisco(d.hid)] : null;
+      if (sm) {
+        semSmart = false;
+        tv = sm.temp == null ? NaN : sm.temp;
+        vida = sm.vida == null ? NaN : sm.vida;
+        horas = sm.horas == null ? NaN : sm.horas;
+        res = sm.reserva == null ? null : { value: sm.reserva };
+        resMin = sm.reservaMin == null ? null : { value: sm.reservaMin };
+      }
       var lt = letrasDe(d.hid) || (estDiscos[numDisco(d.hid)] && estDiscos[numDisco(d.hid)].offline ? (letrasUltimas[numDisco(d.hid)] || '') : '');
       if (!isNaN(tv) && (!quente || tv > quente.t)) quente = { t: tv, nome: (lt ? lt + ' ' : '') + d.top };
       var lim = aviso && aviso.value > 0 ? Math.min(aviso.value, 90) : cfg.limiteDisco;
       var notas = [], badges = ['<span class="badge">' + tipo + '</span>'];
       if (semSmart) badges.push('<span class="badge warm" title="O disco respondeu com temperatura e horas zeradas. Vida útil, reserva e temperatura ficam ocultas até a leitura voltar.">SMART indisponível</span>');
+      if (sm) badges.push('<span class="badge" title="SMART lido pelo CrystalDiskInfo às ' + esc(sm.hora) + ': o LibreHardwareMonitor não consegue ler este disco.">via CDI</span>');
       if (!semSmart && !isNaN(vida)) {
         var cv = vida < 30 ? 'hot' : vida < 70 ? 'warm' : 'ok';
         badges.push('<span class="badge ' + cv + '" title="Vida útil restante informada pelo disco">vida ' + fmt(vida) + '%</span>');
@@ -1446,24 +1476,45 @@ body.compact .kpi .kv{font-size:24px}
 
   // Modo compacto: só a faixa de resumo; lembra a escolha.
   // Redimensiona a janela (só na janela própria do monitor; numa aba comum do navegador, nada acontece).
-  var COMPACTO_LARGURA = 470, corrigir = null;
+  var COMPACTO_LARGURA = 470, acertarLargura = false, encaixeT = null, encaixes = [];
   function pedirJanela(dados) {
     dados.titulo = document.title;
     return fetch('/janela', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) })
       .then(function (r) { return r.json(); }).catch(function () { return {}; });
   }
+  // Encaixa a janela no conteúdo do modo compacto. Pede só a diferença entre o conteúdo e a área visível,
+  // então o zoom da página e a moldura da janela não entram na conta. Repete quando o conteúdo muda de altura.
+  function encaixarCompacto(guardar) {
+    if (!compacto) return;
+    var agora = Date.now();
+    encaixes = encaixes.filter(function (t) { return agora - t < 5000; });
+    if (encaixes.length >= 6) return;   // não disputa com quem está arrastando a borda da janela
+    var wrap = document.querySelector('.wrap'), antes = wrap.style.width;
+    var dW = acertarLargura ? COMPACTO_LARGURA - window.innerWidth : 0;
+    if (Math.abs(dW) <= 2) { dW = 0; acertarLargura = false; }
+    if (dW) wrap.style.width = COMPACTO_LARGURA + 'px';
+    // 2 px de folga: se a janela ficar um fio menor que o conteúdo, a barra de rolagem aparece,
+    // estreita a página, o cabeçalho quebra em duas linhas e o conteúdo cresce ainda mais.
+    var sobra = window.innerHeight - Math.ceil(wrap.getBoundingClientRect().height);
+    wrap.style.width = antes;
+    if (!dW && sobra >= 1 && sobra <= 5) return;
+    encaixes.push(agora);
+    var dpr = window.devicePixelRatio || 1;
+    pedirJanela({ dLargura: Math.round(dW * dpr), dAltura: Math.ceil((2 - sobra) * dpr), naoGuardar: !guardar });
+  }
+  function agendarEncaixe() {
+    if (!compacto) return;
+    clearTimeout(encaixeT);
+    encaixeT = setTimeout(function () { encaixarCompacto(false); }, 250);
+  }
   function ajustarJanela(v) {
     var dpr = window.devicePixelRatio || 1;
     var dx = window.outerWidth - window.innerWidth, dy = window.outerHeight - window.innerHeight;
     if (v) {
-      var wrap = document.querySelector('.wrap'), antes = wrap.style.width;
-      wrap.style.width = COMPACTO_LARGURA + 'px';
-      var alvoH = Math.ceil(wrap.getBoundingClientRect().height);
-      wrap.style.width = antes;
-      corrigir = alvoH;
-      pedirJanela({ largura: Math.round((COMPACTO_LARGURA + dx) * dpr), altura: Math.round((alvoH + dy) * dpr) });
+      acertarLargura = true;
+      setTimeout(function () { acertarLargura = false; }, 2000);
+      encaixarCompacto(true);
     } else {
-      corrigir = null;
       pedirJanela({ restaurar: true }).then(function (r) {
         // sem tamanho guardado (ex.: o monitor reiniciou): volta ao tamanho padrão
         if (r.resultado === 'nada' && window.innerWidth < 900) {
@@ -1472,17 +1523,10 @@ body.compact .kpi .kv{font-size:24px}
       });
     }
   }
-  // depois de encolher, confere a altura uma vez (a moldura da janela varia com a escala do Windows)
-  window.addEventListener('resize', function () {
-    if (!compacto || corrigir == null) return;
-    var falta = corrigir - Math.ceil(document.querySelector('.wrap').getBoundingClientRect().height);
-    var sobra = window.innerHeight - corrigir;
-    corrigir = null;
-    if (Math.abs(sobra) > 4) {
-      var dpr = window.devicePixelRatio || 1;
-      pedirJanela({ largura: Math.round(window.outerWidth * dpr), altura: Math.round((window.outerHeight - sobra) * dpr), naoGuardar: true });
-    }
-  });
+  // confere de novo quando a janela muda, volta a ficar ativa ou o conteúdo muda de altura
+  window.addEventListener('resize', agendarEncaixe);
+  window.addEventListener('focus', agendarEncaixe);
+  if (window.ResizeObserver) new ResizeObserver(agendarEncaixe).observe(document.querySelector('.wrap'));
   function aplicarCompacto(v, mudarJanela) {
     compacto = v;
     document.body.classList.toggle('compact', v);
@@ -1759,6 +1803,10 @@ body.compact .kpi .kv{font-size:24px}
   setInterval(tickAlertas, 5000);
   tickLetras();
   setInterval(tickLetras, 60000);
+  tickSmart();
+  setInterval(tickSmart, 60000);
+  tickMemoria();
+  setInterval(tickMemoria, 10000);
   tickDiscos();
   setInterval(function () { tickDiscos(); }, 3000);
 

@@ -685,9 +685,11 @@ function Verificar-Alertas($r) {
         Avaliar "disco-temp$hw" (Acima "disco-temp$hw" $d.temp $lim) 15 360 1440 'morno' `
             "Disco $lt$($d.nome) a $(Fmt $d.temp) °C" "Acima de $(Fmt $lim) °C. Calor constante encurta a vida útil: melhore a ventilação desse disco."
         $semana = 7 * 24 * 60
-        Avaliar "disco-vida$hw" (-not [double]::IsNaN($d.vida) -and $d.vida -lt 70) 1 $semana $semana 'morno' `
+        # 0 °C e 0 h juntos: a leitura SMART veio zerada, então vida e reserva não valem.
+        $semSmart = $d.temp -eq 0 -and $d.horas -eq 0
+        Avaliar "disco-vida$hw" (-not $semSmart -and -not [double]::IsNaN($d.vida) -and $d.vida -lt 70) 1 $semana $semana 'morno' `
             "SSD $lt$($d.nome): $(Fmt $d.vida) % de vida útil" "O desgaste está avançado. Mantenha backup do que estiver nele e planeje a troca."
-        Avaliar "disco-reserva$hw" (-not [double]::IsNaN($d.reserva) -and -not [double]::IsNaN($d.reservaMin) -and $d.reserva -le $d.reservaMin) 1 1440 1440 'quente' `
+        Avaliar "disco-reserva$hw" (-not $semSmart -and -not [double]::IsNaN($d.reserva) -and -not [double]::IsNaN($d.reservaMin) -and $d.reserva -le $d.reservaMin) 1 1440 1440 'quente' `
             "SSD $lt$($d.nome): reserva esgotada" "A área reserva ($(Fmt $d.reserva) %) chegou ao mínimo do fabricante. Faça backup agora."
         Avaliar "disco-idade$hw" ($d.hdd -and $d.horas -ge 40000) 1 $semana $semana 'morno' `
             "HD $lt$($d.nome): $(Fmt ($d.horas / 8760) 1) anos ligado" "$(Fmt $d.horas) horas de uso. HDs nessa idade falham com mais frequência: mantenha backup do que estiver nele."

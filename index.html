@@ -1083,20 +1083,24 @@ body.compact .kpi .kv{font-size:24px}
       var aviso = find(d, 'Temperature', /^warning temperature$/i);
       var tipo = /^\/hdd/.test(d.hid) ? 'HD' : /^\/nvme/.test(d.hid) ? 'NVMe' : 'SSD';
       var tv = t ? t.value : NaN;
+      // 0 °C e 0 h juntos: a leitura SMART veio zerada, então os dados de saúde não valem.
+      var semSmart = tv === 0 && horas === 0;
+      if (semSmart) tv = NaN;
       var lt = letrasDe(d.hid) || (estDiscos[numDisco(d.hid)] && estDiscos[numDisco(d.hid)].offline ? (letrasUltimas[numDisco(d.hid)] || '') : '');
       if (!isNaN(tv) && (!quente || tv > quente.t)) quente = { t: tv, nome: (lt ? lt + ' ' : '') + d.top };
       var lim = aviso && aviso.value > 0 ? Math.min(aviso.value, 90) : cfg.limiteDisco;
       var notas = [], badges = ['<span class="badge">' + tipo + '</span>'];
-      if (!isNaN(vida)) {
+      if (semSmart) badges.push('<span class="badge warm" title="O disco respondeu com temperatura e horas zeradas. Vida útil, reserva e temperatura ficam ocultas até a leitura voltar.">SMART indisponível</span>');
+      if (!semSmart && !isNaN(vida)) {
         var cv = vida < 30 ? 'hot' : vida < 70 ? 'warm' : 'ok';
         badges.push('<span class="badge ' + cv + '" title="Vida útil restante informada pelo disco">vida ' + fmt(vida) + '%</span>');
         if (vida < 70) notas.push(['warm', 'Desgaste avançado: mantenha backup e planeje a troca.']);
       }
-      if (res && resMin && res.value <= resMin.value) {
+      if (!semSmart && res && resMin && res.value <= resMin.value) {
         badges.push('<span class="badge hot">reserva ' + fmt(res.value) + '%</span>');
         notas.push(['hot', 'Área reserva no mínimo do fabricante: faça backup agora.']);
       }
-      if (!isNaN(horas)) {
+      if (!semSmart && !isNaN(horas)) {
         var velho = tipo === 'HD' && horas >= 40000;
         badges.push('<span class="badge' + (velho ? ' warm' : '') + '" title="' + fmt(horas) + ' horas ligado">' + anos(horas) + ' ligado</span>');
         if (velho) notas.push(['warm', 'HD com muitas horas de uso: falhas ficam mais prováveis, mantenha backup.']);
@@ -1108,7 +1112,7 @@ body.compact .kpi .kv{font-size:24px}
       badges.push(botaoDisco(est, d.top, lt));
       var corT = aviso && aviso.value > 0 ? (tv >= lim ? 'hot' : tv >= lim - 10 ? 'warm' : 'ok') : toneDiscoClass(tv);
       return '<div class="disco' + (est && est.offline ? ' off' : '') + '">' +
-        '<div class="row"><span class="k" title="' + esc(d.top) + '" style="color:var(--text)">' + (lt ? '<span class="letra">' + esc(lt) + '</span>' : '') + esc(d.top) + '</span><span class="mono ' + corT + '">' + (t ? fmtT(tv) + un() : '') + '</span></div>' +
+        '<div class="row"><span class="k" title="' + esc(d.top) + '" style="color:var(--text)">' + (lt ? '<span class="letra">' + esc(lt) + '</span>' : '') + esc(d.top) + '</span><span class="mono ' + corT + '">' + (t && !semSmart ? fmtT(tv) + un() : '') + '</span></div>' +
         '<div class="badges">' + badges.join('') + '</div>' +
         (used && !off ? '<div class="track"><div style="width:' + used.value.toFixed(1) + '%;background:var(--muted)"></div></div>' : '') +
         '<div class="row mono" style="font-size:12px;color:var(--muted)"><span>' + (off ? 'sem acesso aos arquivos (desativado)' : used ? fmt(used.value) + '% ocupado' : lt ? 'espaço ocupado não informado' : 'sem volume montado') + '</span>' + (off ? '' : '<span>L ' + fmt(toMBs(r), 1) + ' · G ' + fmt(toMBs(w), 1) + ' MB/s</span>') + '</div>' +

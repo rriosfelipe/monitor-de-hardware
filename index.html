@@ -39,7 +39,14 @@ button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outli
 .ttl .ic{color:var(--accent)}
 
 /* faixa de resumo */
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr));gap:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:12px}
+.kvram{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.kvram .ks{display:flex;justify-content:space-between;gap:8px}
+.kvram .kbar{margin-top:2px;margin-bottom:4px}
+select.gsel{min-height:40px;max-width:100%;padding:0 34px 0 12px;border:1px solid var(--line);border-radius:8px;background:var(--sub);color:var(--text);font:500 13px var(--mono);cursor:pointer;appearance:none;-webkit-appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 17px) 17px,calc(100% - 12px) 17px;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+select.gsel:hover{border-color:var(--accent)}
+select.gsel:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px 12px;display:flex;flex-direction:column;gap:4px;min-width:0;position:relative;overflow:hidden}
 .kpi .kh{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 .kpi .kh .ic{width:16px;height:16px}
@@ -306,12 +313,7 @@ body.compact .kpi .kv{font-size:24px}
     <div class="ks"><span id="kCpuL">—</span>% · <span id="kCpuC">—</span> MHz</div>
     <svg class="kspark" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true"><polyline id="kCpuSpark" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke" points=""/></svg>
   </div>
-  <div class="kpi">
-    <div class="kh"><svg class="ic" data-icon="gpu" aria-hidden="true"></svg>GPU</div>
-    <div class="kv"><span id="kGpuT">—</span><small class="unit">°C</small></div>
-    <div class="ks"><span id="kGpuL">—</span>% · <span id="kGpuP">—</span> W</div>
-    <svg class="kspark" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true"><polyline id="kGpuSpark" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke" points=""/></svg>
-  </div>
+  <div id="kGpus" style="display:contents"></div>
   <div class="kpi">
     <div class="kh"><svg class="ic" data-icon="ram" aria-hidden="true"></svg>RAM</div>
     <div class="kv"><span id="kRamP">—</span><small>%</small></div>
@@ -320,9 +322,7 @@ body.compact .kpi .kv{font-size:24px}
   </div>
   <div class="kpi">
     <div class="kh"><svg class="ic" data-icon="vram" aria-hidden="true"></svg>VRAM</div>
-    <div class="kv"><span id="kVramP">—</span><small>%</small></div>
-    <div class="ks"><span id="kVramU">—</span> / <span id="kVramT">—</span> GB</div>
-    <div class="kbar"><div id="kVramBar" style="width:0%"></div></div>
+    <div id="kVram"></div>
   </div>
   <div class="kpi">
     <div class="kh"><svg class="ic" data-icon="bolt" aria-hidden="true"></svg>Energia</div>
@@ -378,7 +378,7 @@ body.compact .kpi .kv{font-size:24px}
   </section>
 
   <section class="card" id="cardGpu">
-    <div class="card-head"><h2 class="ttl"><svg class="ic" data-icon="gpu" aria-hidden="true"></svg>Placa de vídeo</h2><span class="model" id="gpuModel">—</span></div>
+    <div class="card-head"><h2 class="ttl"><svg class="ic" data-icon="gpu" aria-hidden="true"></svg>Placa de vídeo</h2><span class="model" id="gpuModel">—</span><select class="gsel" id="gpuSel" aria-label="Placa de vídeo exibida" hidden></select></div>
     <div class="hero">
       <div class="gauge-wrap">
         <div class="gauge" role="img" id="gpuGauge" aria-label="Temperatura e uso da placa de vídeo">
@@ -410,7 +410,7 @@ body.compact .kpi .kv{font-size:24px}
       <div class="tile"><div class="tl">Uso de memória</div><div class="tv"><span id="gpuMemLoad">—</span>%</div></div>
     </div>
     <div>
-      <div class="lbl" style="margin-bottom:8px">Programas usando a placa de vídeo</div>
+      <div class="lbl" style="margin-bottom:8px" id="gpuProcsLbl">Programas usando a placa de vídeo</div>
       <div class="proc-head" aria-hidden="true"><span>Programa</span><span></span><span>GPU</span><span>VRAM</span></div>
       <div class="procs" id="gpuProcs"><div class="empty">Carregando…</div></div>
     </div>
@@ -555,7 +555,10 @@ body.compact .kpi .kv{font-size:24px}
   var $ = function (id) { return document.getElementById(id); };
   var C_OUT = 2 * Math.PI * 64, C_IN = 2 * Math.PI * 50;
   var HIST_MAX = 900;                       // 15 min a 1 leitura/s
-  var hist = { cpu: [], gpu: [] };          // {t, temp, load}
+  var hist = { cpu: [], gpus: {} };         // {t, temp, load}; gpus: um histórico por placa (HardwareId)
+  var gpuSel = null;                        // placa mostrada no cartão
+  try { gpuSel = localStorage.getItem('mh-gpu'); } catch (e) {}
+  var vramReal = {};                        // nome da placa -> GB de VRAM (lido do Windows)
   var janela = 300;                         // segundos visíveis no gráfico
   try { janela = parseInt(localStorage.getItem('mh-janela'), 10) || 300; } catch (e) {}
   var paused = false;
@@ -771,12 +774,12 @@ body.compact .kpi .kv{font-size:24px}
     arr.push({ t: Date.now(), temp: temp, load: load });
     if (arr.length > HIST_MAX) arr.shift();
   }
-  function miniSpark(id, arr) {
-    var ult = arr.slice(-60);
-    $(id).setAttribute('points', ult.map(function (p, i) {
+  function pontosSpark(arr) {
+    return arr.slice(-60).map(function (p, i) {
       return (i * 100 / 59).toFixed(1) + ',' + (21 - pct01(p.load / 100) * 20).toFixed(1);
-    }).join(' '));
+    }).join(' ');
   }
+  function miniSpark(id, arr) { $(id).setAttribute('points', pontosSpark(arr)); }
 
   // Gráfico: temperatura (linha, eixo esquerdo 20–100 °C) e uso (área, eixo direito 0–100 %).
   var charts = {};
@@ -805,7 +808,7 @@ body.compact .kpi .kv{font-size:24px}
       '<div class="cur"></div><div class="tip"></div></div>' +
       '<div class="xl"><span class="x0"></span><span class="x1"></span><span>agora</span></div>';
     var c = {
-      el: el, arr: hist[nome], area: el.querySelector('.area'), linha: el.querySelector('.linha'),
+      el: el, arr: hist[nome] || [], area: el.querySelector('.area'), linha: el.querySelector('.linha'),
       tw: el.querySelector('.tw'), th: el.querySelector('.th'), yl: el.querySelectorAll('.yl'),
       plot: el.querySelector('.plot'), cur: el.querySelector('.cur'), tip: el.querySelector('.tip'), cmax: el.querySelector('.cmax')
     };
@@ -920,51 +923,100 @@ body.compact .kpi .kv{font-size:24px}
     $('cores').innerHTML = tiles.length ? tiles.join('') : '<div class="empty">Sem dados por núcleo.</div>';
   }
 
+  function nomeCurto(n) {
+    return String(n).replace(/^(NVIDIA|AMD|Intel\(R\)|Intel)\s+/i, '').replace(/^(GeForce|Radeon)\s+/i, '').trim();
+  }
+  function integrada(n) { return /intel.*(uhd|iris)|radeon\(tm\) graphics/i.test(n); }
+  // Leituras de uma placa. Com mais de uma, a VRAM usada vem do contador por adaptador do Windows
+  // (o LibreHardwareMonitor repete a memória da primeira placa nas outras).
+  function infoGpu(g, varias) {
+    var temp = find(g, 'Temperature', /gpu core|^gpu$|edge/i) || sensorsOf(g, 'Temperature')[0];
+    var hot = find(g, 'Temperature', /hot ?spot/i);
+    var hotLbl = hot ? 'Hotspot' : 'Memória (junction)';
+    if (!hot) hot = find(g, 'Temperature', /junction|memory/i);
+    var clk = find(g, 'Clock', /core/i) || sensorsOf(g, 'Clock')[0];
+    var mem = find(g, 'Clock', /memory/i);
+    var load = find(g, 'Load', /^gpu core$|^d3d 3d$|core/i) || sensorsOf(g, 'Load')[0];
+    var memLoad = find(g, 'Load', /memory controller|memory/i);
+    var pw = find(g, 'Power', /package|board|total|gpu power/i) || sensorsOf(g, 'Power')[0];
+    var fan = find(g, 'Fan', /./), ctl = find(g, 'Control', /fan/i);
+    var usadaPlaca = find(g, 'Data', /memory used/i, /shared|d3d/i), usadaWin = find(g, 'Data', /dedicated memory used/i);
+    var total = find(g, 'Data', /memory total/i, /shared/i), livre = find(g, 'Data', /memory free/i, /shared/i);
+    var u = toGB(varias && usadaWin ? usadaWin : (usadaPlaca || usadaWin));
+    var tt = vramReal[g.top] != null ? vramReal[g.top] : toGB(total);
+    if (isNaN(tt) && !isNaN(u) && livre) tt = u + toGB(livre);
+    return {
+      hid: g.hid, nome: g.top, curto: nomeCurto(g.top), t: temp ? temp.value : NaN, hot: hot, hotLbl: hotLbl,
+      clk: clk, mem: mem, lv: load ? load.value : NaN, memLoad: memLoad, w: pw ? pw.value : NaN,
+      fanTxt: fan ? fmt(fan.value) + ' RPM' : (ctl ? fmt(ctl.value) + '%' : '—'),
+      u: u, tt: tt, vp: !isNaN(u) && tt > 0 ? u / tt * 100 : NaN
+    };
+  }
   function renderGpu(hws) {
     var gpus = family(hws, 'gpu');
-    var gpu = gpus.filter(function (g) { return !/intel.*(uhd|iris)|radeon\(tm\) graphics/i.test(g.top); })[0] || gpus[0];
-    setText('gpuModel', gpu ? gpu.top : 'Nenhuma placa de vídeo reportada');
-    var temp = find(gpu, 'Temperature', /gpu core|^gpu$|edge/i) || sensorsOf(gpu, 'Temperature')[0];
-    var t = temp ? temp.value : NaN;
+    var infos = gpus.map(function (g) { return infoGpu(g, gpus.length > 1); });
+    infos.forEach(function (i) { guardar(hist.gpus[i.hid] || (hist.gpus[i.hid] = []), i.t, i.lv); });
+    var sel = infos.filter(function (i) { return i.hid === gpuSel; })[0] ||
+      infos.filter(function (i) { return !integrada(i.nome); })[0] || infos[0];
+
+    // cabeçalho: nome fixo com uma placa, seletor com várias
+    var caixa = $('gpuSel');
+    if (infos.length > 1) {
+      var sig = infos.map(function (i) { return i.hid + i.nome; }).join('|');
+      if (caixa.dataset.sig !== sig) {
+        caixa.innerHTML = infos.map(function (i) { return '<option value="' + esc(i.hid) + '">' + esc(i.nome) + '</option>'; }).join('');
+        caixa.dataset.sig = sig;
+      }
+      if (document.activeElement !== caixa) caixa.value = sel.hid;
+      caixa.hidden = false; $('gpuModel').hidden = true;
+    } else {
+      caixa.hidden = true; $('gpuModel').hidden = false;
+      setText('gpuModel', sel ? sel.nome : 'Nenhuma placa de vídeo reportada');
+    }
+    setText('gpuProcsLbl', 'Programas usando a placa de vídeo' + (infos.length > 1 ? ' (todas as placas)' : ''));
+
+    var t = sel ? sel.t : NaN, lv = sel ? sel.lv : NaN;
     setText('gpuTemp', fmtT(t));
     var st = $('gpuStatus'); st.textContent = status(t); st.style.color = tone(t);
-    var hot = find(gpu, 'Temperature', /hot ?spot/i);
-    setText('gpuHotLbl', hot ? 'Hotspot' : 'Memória (junction)');
-    if (!hot) hot = find(gpu, 'Temperature', /junction|memory/i);
-    setText('gpuHot', fmtT(hot && hot.value)); $('gpuHot').style.color = hot ? tone(hot.value) : '';
-    var clk = find(gpu, 'Clock', /core/i) || sensorsOf(gpu, 'Clock')[0];
-    setText('gpuClock', fmt(clk && clk.value));
-    var mem = find(gpu, 'Clock', /memory/i);
-    setText('gpuMem', fmt(mem && mem.value));
-    var load = find(gpu, 'Load', /^gpu core$|^d3d 3d$|core/i) || sensorsOf(gpu, 'Load')[0];
-    var lv = load ? load.value : NaN;
+    setText('gpuHotLbl', sel ? sel.hotLbl : 'Hotspot');
+    setText('gpuHot', fmtT(sel && sel.hot && sel.hot.value)); $('gpuHot').style.color = sel && sel.hot ? tone(sel.hot.value) : '';
+    setText('gpuClock', fmt(sel && sel.clk && sel.clk.value));
+    setText('gpuMem', fmt(sel && sel.mem && sel.mem.value));
     setText('gpuLoad', fmt(lv));
-    var memLoad = find(gpu, 'Load', /memory controller|memory/i);
-    setText('gpuMemLoad', fmt(memLoad && memLoad.value));
-    var pw = find(gpu, 'Power', /package|board|total|gpu power/i) || sensorsOf(gpu, 'Power')[0];
-    setText('gpuPower', fmt(pw && pw.value));
-    var fan = find(gpu, 'Fan', /./);
-    var ctl = find(gpu, 'Control', /fan/i);
-    setText('gpuFan', fan ? fmt(fan.value) + ' RPM' : (ctl ? fmt(ctl.value) + '%' : '—'));
-    var used = find(gpu, 'Data', /memory used/i, /shared/i) || find(gpu, 'Data', /dedicated memory used/i);
-    var total = find(gpu, 'Data', /memory total/i, /shared/i);
-    var free = find(gpu, 'Data', /memory free/i, /shared/i);
-    var u = toGB(used), tt = toGB(total);
-    if (isNaN(tt) && !isNaN(u) && free) tt = u + toGB(free);
-    var vp = !isNaN(u) && tt > 0 ? u / tt * 100 : NaN;
-    setText('vramTxt', fmt(u, 1) + ' / ' + fmt(tt, 1) + ' GB');
-    $('vramBar').style.width = (isNaN(vp) ? 0 : vp).toFixed(1) + '%';
+    setText('gpuMemLoad', fmt(sel && sel.memLoad && sel.memLoad.value));
+    setText('gpuPower', fmt(sel ? sel.w : NaN));
+    setText('gpuFan', sel ? sel.fanTxt : '—');
+    setText('vramTxt', sel ? fmt(sel.u, 1) + ' / ' + fmt(sel.tt, 1) + ' GB' : '—');
+    $('vramBar').style.width = (sel && !isNaN(sel.vp) ? sel.vp : 0).toFixed(1) + '%';
     aneis('gpu', t, lv);
-    guardar(hist.gpu, t, lv);
+    charts.gpu.arr = sel ? hist.gpus[sel.hid] : [];
     desenhar(charts.gpu);
 
-    setText('kGpuT', fmtT(t)); $('kGpuT').style.color = tone(t);
-    setText('kGpuL', fmt(lv)); setText('kGpuP', fmt(pw && pw.value));
-    miniSpark('kGpuSpark', hist.gpu);
-    setText('kVramP', fmt(vp)); setText('kVramU', fmt(u, 1)); setText('kVramT', fmt(tt, 0));
-    $('kVramBar').style.width = (isNaN(vp) ? 0 : vp).toFixed(1) + '%';
-    resumo.gpuW = pw ? pw.value : NaN;
+    // faixa de resumo: um indicador por placa
+    $('kGpus').innerHTML = (infos.length ? infos : [null]).map(function (i) {
+      return '<div class="kpi"><div class="kh">' + icone('gpu') + esc(i && infos.length > 1 ? i.curto : 'GPU') + '</div>' +
+        '<div class="kv"><span style="color:' + tone(i ? i.t : NaN) + '">' + fmtT(i ? i.t : NaN) + '</span><small>' + un() + '</small></div>' +
+        '<div class="ks">' + fmt(i ? i.lv : NaN) + '% · ' + fmt(i ? i.w : NaN) + ' W</div>' +
+        '<svg class="kspark" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke" points="' +
+        (i ? pontosSpark(hist.gpus[i.hid]) : '') + '"/></svg></div>';
+    }).join('');
+    $('kVram').innerHTML = infos.length > 1
+      ? '<div class="kvram">' + infos.map(function (i) {
+          return '<div class="ks" title="' + esc(i.nome) + '"><span>' + esc(i.curto.replace(/^(RTX|GTX|RX|Arc)\s+/i, '')) + '</span><span>' + fmt(i.u, 1) + '/' + fmt(i.tt, 0) + ' GB</span></div>' +
+            '<div class="kbar"><div style="width:' + (isNaN(i.vp) ? 0 : i.vp).toFixed(1) + '%"></div></div>';
+        }).join('') + '</div>'
+      : '<div class="kv">' + fmt(sel ? sel.vp : NaN) + '<small>%</small></div><div class="ks">' + (sel ? fmt(sel.u, 1) + ' / ' + fmt(sel.tt, 0) : '— / —') + ' GB</div>' +
+        '<div class="kbar"><div style="width:' + (sel && !isNaN(sel.vp) ? sel.vp : 0).toFixed(1) + '%"></div></div>';
+    var ws = infos.map(function (i) { return i.w; }).filter(function (v) { return !isNaN(v); });
+    resumo.gpuW = ws.length ? ws.reduce(function (a, b) { return a + b; }, 0) : NaN;
+    resumo.gpuWs = ws;
   }
+  $('gpuSel').addEventListener('change', function () {
+    gpuSel = this.value;
+    try { localStorage.setItem('mh-gpu', gpuSel); } catch (e) {}
+    this.blur();
+    if (last) render(last, true);
+  });
 
   function renderRam(hws) {
     var rams = family(hws, 'ram');
@@ -1430,7 +1482,9 @@ body.compact .kpi .kv{font-size:24px}
     renderCpu(p.hws); renderGpu(p.hws); renderRam(p.hws); renderDrives(p.hws); renderNet(p.hws);
     var w = (isNaN(resumo.cpuW) ? 0 : resumo.cpuW) + (isNaN(resumo.gpuW) ? 0 : resumo.gpuW);
     setText('kPow', isNaN(resumo.cpuW) && isNaN(resumo.gpuW) ? '—' : fmt(w));
-    setText('kPowC', fmt(resumo.cpuW)); setText('kPowG', fmt(resumo.gpuW));
+    setText('kPowC', fmt(resumo.cpuW));
+    setText('kPowG', fmt(resumo.gpuW));
+    $('kPowG').parentNode.title = resumo.gpuWs && resumo.gpuWs.length > 1 ? 'GPUs: ' + resumo.gpuWs.map(function (v) { return fmt(v) + ' W'; }).join(' + ') : '';
     if (!compacto) { renderFans(p.hws); if (sensAberto || !sensSig) renderAll(p.hws); }
     noPush = false;
   }
@@ -1676,27 +1730,41 @@ body.compact .kpi .kv{font-size:24px}
     var col = function (i) { return d.pontos.map(function (p) { return [p[0], p[i]]; }); };
     var temp = function (v) { return fmt(tC(v), 0) + ' ' + un(); };
     var acc = cssVar('--accent'), s2 = cssVar('--serie2');
+    // o servidor grava cada GPU como dispositivo, junto com os discos: separa os dois
+    var ehGpu = function (x) { return /^\/gpu-/.test(x.id); };
+    var gpusReg = d.discos.filter(ehGpu).sort(function (a, b) { return a.id < b.id ? -1 : 1; });
+    var discosReg = d.discos.filter(function (x) { return !ehGpu(x); });
+    var CORES_GPU = [s2, '#F2B33D', '#4FD1A5', '#FF8A65'];
+    var seriesGpu = [{ nome: 'GPU', cor: s2, pts: col(4) }];
+    if (gpusReg.length > 1) {
+      seriesGpu = gpusReg.map(function (g, i) {
+        var pts = g.pontos;
+        // antes de existir registro por placa, a coluna única de GPU era a primeira placa
+        if (i === 0 && pts.length) pts = col(4).filter(function (p) { return p[0] < pts[0][0]; }).concat(pts);
+        return { nome: nomeCurto(g.nome), cor: CORES_GPU[i % CORES_GPU.length], pts: pts };
+      });
+    }
     graficoLongo($('rgTemp'), {
       titulo: 'Temperatura média', inicio: ini, fim: fim, passoMs: passo, lo: 20, hi: 100,
       rotuloY: function (v) { return fmt(tC(v), 0) + '°'; }, rotuloV: temp,
       limites: [{ v: cfg.limiteMorno, cor: cfg.morno }, { v: cfg.limiteQuente, cor: cfg.quente }],
-      series: [{ nome: 'CPU', cor: acc, pts: col(1) }, { nome: 'GPU', cor: s2, pts: col(4) }]
+      series: [{ nome: 'CPU', cor: acc, pts: col(1) }].concat(seriesGpu)
     });
     graficoLongo($('rgUso'), {
       titulo: 'Uso médio', inicio: ini, fim: fim, passoMs: passo, lo: 0, hi: 100,
       rotuloY: function (v) { return fmt(v, 0) + '%'; }, rotuloV: function (v) { return fmt(v, 0) + '%'; },
-      series: [{ nome: 'CPU', cor: acc, pts: col(3) }, { nome: 'GPU', cor: s2, pts: col(6) }]
+      series: [{ nome: 'CPU', cor: acc, pts: col(3) }, { nome: gpusReg.length > 1 ? 'GPU (a mais usada)' : 'GPU', cor: s2, pts: col(6) }]
     });
     // discos: por padrão os 3 mais quentes do período
-    if (!regDiscosSel) regDiscosSel = d.discos.slice(0, 3).map(function (x) { return x.id; });
+    if (!regDiscosSel) regDiscosSel = discosReg.slice(0, 3).map(function (x) { return x.id; });
     var corDe = {}, vistos = {};
-    d.discos.forEach(function (x, i) {
+    discosReg.forEach(function (x, i) {
       corDe[x.id] = CORES_DISCO[i % CORES_DISCO.length];
       vistos[x.nome] = (vistos[x.nome] || 0) + 1;
       x.rotulo = vistos[x.nome] > 1 ? x.nome + ' (' + vistos[x.nome] + ')' : x.nome;
       if (letrasDe(x.id)) x.rotulo = letrasDe(x.id) + ' ' + x.rotulo;   // dois discos do mesmo modelo
     });
-    $('rgDiscoChips').innerHTML = d.discos.map(function (x) {
+    $('rgDiscoChips').innerHTML = discosReg.map(function (x) {
       return '<button type="button" class="chip" data-disco="' + esc(x.id) + '" aria-pressed="' + (regDiscosSel.indexOf(x.id) >= 0) + '"><i style="background:' + corDe[x.id] + '"></i>' + esc(x.rotulo) + '</button>';
     }).join('');
     var lo = 20, hi = 80;
@@ -1704,7 +1772,7 @@ body.compact .kpi .kv{font-size:24px}
       titulo: 'Temperatura dos discos (escolha abaixo)', inicio: ini, fim: fim, passoMs: passo, lo: lo, hi: hi,
       rotuloY: function (v) { return fmt(tC(v), 0) + '°'; }, rotuloV: temp,
       limites: [{ v: cfg.limiteDisco, cor: cfg.quente }],
-      series: d.discos.filter(function (x) { return regDiscosSel.indexOf(x.id) >= 0; }).map(function (x) {
+      series: discosReg.filter(function (x) { return regDiscosSel.indexOf(x.id) >= 0; }).map(function (x) {
         return { nome: x.rotulo, cor: corDe[x.id], pts: x.pontos };
       })
     });
@@ -1714,7 +1782,7 @@ body.compact .kpi .kv{font-size:24px}
     setText('rgCpuT', r.cpuMax != null ? quando(r.cpuMaxT) : 'sem dados');
     setText('rgGpu', r.gpuMax != null ? fmtT(r.gpuMax) + ' ' + un() : '—'); $('rgGpu').style.color = r.gpuMax != null ? tone(r.gpuMax) : '';
     setText('rgGpuT', r.gpuMax != null ? quando(r.gpuMaxT) : 'sem dados');
-    var dq = d.discos[0];
+    var dq = discosReg[0];
     setText('rgDisco', dq ? fmtT(dq.max) + ' ' + un() : '—'); $('rgDisco').style.color = dq ? toneDisco(dq.max) : '';
     setText('rgDiscoT', dq ? dq.rotulo + ' · ' + quando(dq.maxT) : 'sem dados');
     $('rgDiscoT').title = dq ? dq.rotulo : '';
@@ -1809,6 +1877,17 @@ body.compact .kpi .kv{font-size:24px}
   setInterval(tickSmart, 60000);
   tickMemoria();
   setInterval(tickMemoria, 10000);
+  function tickGpus() {
+    fetch('/gpus', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (l) {
+      var novo = {};
+      [].concat(l || []).forEach(function (g) { novo[g.nome] = g.vramGB; });
+      if (JSON.stringify(novo) === JSON.stringify(vramReal)) return;
+      vramReal = novo;
+      if (last) render(last, true);
+    }).catch(function () {});
+  }
+  tickGpus();
+  setInterval(tickGpus, 60000);
   tickDiscos();
   setInterval(function () { tickDiscos(); }, 3000);
 
@@ -1884,11 +1963,15 @@ body.compact .kpi .kv{font-size:24px}
   }).catch(function () {});
 
   // Começa com o histórico guardado pelo servidor (últimos 15 min) e então passa a ler ao vivo.
-  fetch('/historico', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (pts) {
+  fetch('/historico', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
     var n = function (v) { return v == null ? NaN : v; };
-    pts.forEach(function (p) {
+    var ids = j.gpus || [];
+    (j.pontos || []).forEach(function (p) {
       hist.cpu.push({ t: p[0], temp: n(p[1]), load: n(p[2]) });
-      hist.gpu.push({ t: p[0], temp: n(p[3]), load: n(p[4]) });
+      ids.forEach(function (id, i) {
+        if (p[3 + 2 * i] == null && p[4 + 2 * i] == null) return;
+        (hist.gpus[id] || (hist.gpus[id] = [])).push({ t: p[0], temp: n(p[3 + 2 * i]), load: n(p[4 + 2 * i]) });
+      });
     });
   }).catch(function () {}).then(function () {
     tick();

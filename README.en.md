@@ -17,7 +17,8 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
   - Per-core clocks and load (collapsible).
   - **All sensors** (collapsible section): a searchable, filterable list with a min–max range bar for every sensor.
   - **Compact mode** (*Compacto*): only the summary strip, in two columns. The window shrinks to fit it and returns to its previous size (maximized included) when you leave compact mode.
-- **Tray icon.** Shows the hotter of CPU and GPU, colored by temperature band. A thin stripe under the number tells you which one it is: blue for CPU, purple for GPU. You can switch it to CPU only, GPU only or alternating.
+- **Multiple graphics cards.** With more than one GPU, the card gets a GPU selector; the summary strip, history, VRAM, alerts and log handle each card separately. Each card's total VRAM is read from Windows.
+- **Tray icon.** Shows the hotter of CPU and GPU (the hottest GPU if there are several), colored by temperature band. A thin stripe under the number tells you which one it is: blue for CPU, purple for GPU. You can switch it to CPU only, GPU only or alternating.
 - **Per-program usage.** The programs using the most CPU (with RAM) and the most GPU (with engine type and VRAM). Same data sources as Task Manager.
 - **Alerts** as Windows notifications, with cooldowns:
 
@@ -143,6 +144,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `GET /alertas` | Active alerts |
 | `GET /memoria` | Configured RAM speed, as reported by Windows |
 | `GET /smart` | SMART read by CrystalDiskInfo, per disk number |
+| `GET /gpus` | Graphics cards and their real VRAM size |
 | `GET /letras`, `GET /discos-estado` | Drive letters, disk state and the last enable/disable action |
 | `GET /disco-uso?n=<disk>` | What is using a drive (processes, qBittorrent torrents) |
 | `GET/POST /config` | Read or save settings |

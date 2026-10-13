@@ -251,6 +251,18 @@ function Atender($ctx) {
                 } catch { $r = 'recusado' }
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject @{ resultado = $r } -Compress)))
             }
+            '/gpus' {
+                $lista = @()
+                try {
+                    $lista = @(Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}' -ErrorAction SilentlyContinue | ForEach-Object {
+                        $pr = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
+                        if ($pr.DriverDesc -and $pr.'HardwareInformation.qwMemorySize') {
+                            [ordered]@{ nome = [string]$pr.DriverDesc; vramGB = [math]::Round($pr.'HardwareInformation.qwMemorySize' / 1GB, 1) }
+                        }
+                    })
+                } catch { }
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject $lista -Compress)))
+            }
             '/letras' {
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes($script:letrasJson))
             }
@@ -264,7 +276,8 @@ function Atender($ctx) {
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((Json-Alertas)))
             }
             '/historico' {
-                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes('[' + ($script:historico.ToArray() -join ',') + ']'))
+                $ids = ConvertTo-Json -InputObject @($script:histGpus.ToArray()) -Compress
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes('{"gpus":' + $ids + ',"pontos":[' + ($script:historico.ToArray() -join ',') + ']}'))
             }
             '/processos' {
                 $script:procPedido = Get-Date
@@ -350,7 +363,7 @@ function Json-Smart {
 }
 function Ler-Resumo {
     $texto = $utf8.GetString((Obter-Dados))
-    $r = @{ cpu = $NaN; cpuUso = $NaN; cpuW = $NaN; gpuW = $NaN; gpu = $NaN; gpuUso = $NaN; ramUsada = $NaN; ramLivre = $NaN; virtUsada = $NaN; virtLivre = $NaN; discos = @{} }
+    $r = @{ cpu = $NaN; cpuUso = $NaN; cpuW = $NaN; gpuW = $NaN; gpu = $NaN; gpuUso = $NaN; gpuNome = ''; ramUsada = $NaN; ramLivre = $NaN; virtUsada = $NaN; virtLivre = $NaN; discos = @{}; gpus = [ordered]@{} }
     $nomesHw = @{}
     foreach ($m in $padraoHw.Matches($texto)) { $nomesHw[$m.Groups[2].Value] = $m.Groups[1].Value.Trim() }
     $cpuTemps = @()
@@ -360,14 +373,25 @@ function Ler-Resumo {
             if ($nome -match 'Tctl|Package') { $r.cpu = Numero $valor } else { $cpuTemps += (Numero $valor) }
         } elseif ($id -match '^/(amd|intel)cpu/\d+/power/' -and $nome -match '^(CPU )?Package$') {
             $r.cpuW = Numero $valor
-        } elseif ($id -match '^/gpu-(nvidia|amd)/\d+/power/' -and ([double]::IsNaN($r.gpuW) -or $nome -eq 'GPU Package')) {
-            $r.gpuW = Numero $valor
         } elseif ($id -match '^/(amd|intel)cpu/\d+/load/' -and $nome -eq 'CPU Total') {
             $r.cpuUso = Numero $valor
-        } elseif ($id -match '^/gpu-(nvidia|amd)/\d+/temperature/' -and [double]::IsNaN($r.gpu)) {
-            $r.gpu = Numero $valor
-        } elseif ($id -match '^/gpu-(nvidia|amd)/\d+/load/' -and $nome -eq 'GPU Core') {
-            $r.gpuUso = Numero $valor
+        } elseif ($id -match '^/gpu-') {
+            # uma entrada por placa de vídeo (pode haver várias)
+            $mg = [regex]::Match($id, '^(/gpu-(?:nvidia|amd|intel)/\d+)/(temperature|load|power)/')
+            if ($mg.Success) {
+                $hw = $mg.Groups[1].Value
+                $g = $r.gpus[$hw]
+                if (-not $g) {
+                    $g = @{ nome = $nomesHw[$hw]; temp = $NaN; uso = $NaN; w = $NaN }
+                    if (-not $g.nome) { $g.nome = $hw }
+                    $r.gpus[$hw] = $g
+                }
+                switch ($mg.Groups[2].Value) {
+                    'temperature' { if ([double]::IsNaN($g.temp) -or $nome -eq 'GPU Core') { $g.temp = Numero $valor } }
+                    'load' { if ($nome -eq 'GPU Core' -or ([double]::IsNaN($g.uso) -and $nome -eq 'D3D 3D')) { $g.uso = Numero $valor } }
+                    'power' { if ([double]::IsNaN($g.w) -or $nome -eq 'GPU Package') { $g.w = Numero $valor } }
+                }
+            }
         } elseif ($id -match '^/ram/data/') {
             if ($nome -eq 'Memory Used') { $r.ramUsada = Numero $valor }
             if ($nome -eq 'Memory Available') { $r.ramLivre = Numero $valor }
@@ -405,6 +429,14 @@ function Ler-Resumo {
         $s = $smart[($hw -replace '^.*/', '')]
         if ($s -and $d.temp -eq 0 -and $d.horas -eq 0) { foreach ($k in 'temp', 'vida', 'reserva', 'reservaMin', 'horas') { $d[$k] = $s[$k] } }
     }
+    # resumo das GPUs: a mais quente representa "a GPU"; a potência é a soma
+    $somaW = 0.0; $temW = $false
+    foreach ($hw in $r.gpus.Keys) {
+        $g = $r.gpus[$hw]
+        if (-not [double]::IsNaN($g.w)) { $somaW += $g.w; $temW = $true }
+        if (-not [double]::IsNaN($g.temp) -and ([double]::IsNaN($r.gpu) -or $g.temp -gt $r.gpu)) { $r.gpu = $g.temp; $r.gpuUso = $g.uso; $r.gpuNome = $g.nome }
+    }
+    if ($temW) { $r.gpuW = $somaW }
     return $r
 }
 
@@ -531,9 +563,16 @@ function Json-Num([double]$v) {
     if ([double]::IsNaN($v)) { return 'null' }
     return $v.ToString('0.#', [System.Globalization.CultureInfo]::InvariantCulture)
 }
+$script:histGpus = New-Object System.Collections.Generic.List[string]
 function Guardar-Historico($r) {
     $t = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-    $script:historico.Enqueue("[$t,$(Json-Num $r.cpu),$(Json-Num $r.cpuUso),$(Json-Num $r.gpu),$(Json-Num $r.gpuUso)]")
+    foreach ($hw in $r.gpus.Keys) { if (-not $script:histGpus.Contains($hw)) { $script:histGpus.Add($hw) } }
+    $cols = ''
+    foreach ($hw in $script:histGpus) {
+        $g = $r.gpus[$hw]
+        $cols += if ($g) { ",$(Json-Num $g.temp),$(Json-Num $g.uso)" } else { ',null,null' }
+    }
+    $script:historico.Enqueue("[$t,$(Json-Num $r.cpu),$(Json-Num $r.cpuUso)$cols]")
     while ($script:historico.Count -gt 450) { [void]$script:historico.Dequeue() }
 }
 
@@ -745,8 +784,11 @@ function Verificar-Alertas($r) {
     Avaliar 'lhm' $false 0 0 0 '' '' ''
     Avaliar 'cpu-temp' (Acima 'cpu-temp' $r.cpu $cfg.limiteQuente) 5 30 60 'quente' `
         "Processador a $(Fmt $r.cpu) °C" "Acima de $($cfg.limiteQuente) °C há mais de 10 segundos. Uso: $(Fmt $r.cpuUso) %."
-    Avaliar 'gpu-temp' (Acima 'gpu-temp' $r.gpu $cfg.limiteQuente) 5 30 60 'quente' `
-        "Placa de vídeo a $(Fmt $r.gpu) °C" "Acima de $($cfg.limiteQuente) °C há mais de 10 segundos. Uso: $(Fmt $r.gpuUso) %."
+    foreach ($hw in $r.gpus.Keys) {
+        $g = $r.gpus[$hw]
+        Avaliar "gpu-temp$hw" (Acima "gpu-temp$hw" $g.temp $cfg.limiteQuente) 5 30 60 'quente' `
+            "$($g.nome) a $(Fmt $g.temp) °C" "Placa de vídeo acima de $($cfg.limiteQuente) °C há mais de 10 segundos. Uso: $(Fmt $g.uso) %."
+    }
     $limVirt = $r.virtUsada + $r.virtLivre
     $pctVirt = if ($limVirt -gt 0) { $r.virtUsada / $limVirt * 100 } else { $NaN }
     Avaliar 'memoria' (Acima 'memoria' $pctVirt 90) 15 30 60 'quente' `
@@ -786,18 +828,26 @@ $timerIcone.Add_Tick({
         Verificar-Alertas $r
         if ($script:registro) {
             $ids = @($r.discos.Keys)
+            $nomesDisp = @($ids | ForEach-Object { $r.discos[$_].nome })
+            $tempsDisp = @($ids | ForEach-Object { $r.discos[$_].temp })
+            foreach ($hw in $r.gpus.Keys) { $ids += $hw; $nomesDisp += $r.gpus[$hw].nome; $tempsDisp += $r.gpus[$hw].temp }
+            $usoGpu = $NaN
+            foreach ($hw in $r.gpus.Keys) { $u = $r.gpus[$hw].uso; if (-not [double]::IsNaN($u) -and ([double]::IsNaN($usoGpu) -or $u -gt $usoGpu)) { $usoGpu = $u } }
             try {
-                $script:registro.Amostra($r.cpu, $r.cpuUso, $r.gpu, $r.gpuUso, $r.cpuW, $r.gpuW, $r.ramUsada,
-                    [string[]]$ids, [string[]]@($ids | ForEach-Object { $r.discos[$_].nome }), [double[]]@($ids | ForEach-Object { $r.discos[$_].temp }))
+                $script:registro.Amostra($r.cpu, $r.cpuUso, $r.gpu, $usoGpu, $r.cpuW, $r.gpuW, $r.ramUsada,
+                    [string[]]$ids, [string[]]$nomesDisp, [double[]]$tempsDisp)
             } catch { }
         }
         Notificar-Fila
         $texto = if ([double]::IsNaN($r.cpu)) { '--' } else { [string][math]::Round($r.cpu) }
         $total = $r.ramUsada + $r.ramLivre
         $itemCpu.Text = "CPU  $(Fmt $r.cpu) °C · $(Fmt $r.cpuUso) %"
-        $itemGpu.Text = "GPU  $(Fmt $r.gpu) °C"
+        $curtas = @($r.gpus.Keys | ForEach-Object { $g = $r.gpus[$_]; (($g.nome -replace '^(NVIDIA|AMD|Intel\(R\)|Intel)\s+', '') -replace '^(GeForce|Radeon)\s+', '') + " $(Fmt $g.temp) °C" })
+        $itemGpu.Text = if ($curtas.Count -gt 1) { 'GPU  ' + ($curtas -join ' · ') } else { "GPU  $(Fmt $r.gpu) °C · $(Fmt $r.gpuUso) %" }
         $itemRam.Text = "RAM  $(Fmt $r.ramUsada 1) de $(Fmt $total 0) GB"
-        $dica = "CPU $(Fmt $r.cpu) °C · GPU $(Fmt $r.gpu) °C`nRAM $(Fmt $r.ramUsada 1)/$(Fmt $total 0) GB"
+        $tempsGpu = @($r.gpus.Keys | ForEach-Object { Fmt $r.gpus[$_].temp }) -join '/'
+        if (-not $tempsGpu) { $tempsGpu = Fmt $r.gpu }
+        $dica = "CPU $(Fmt $r.cpu) °C · GPU $tempsGpu °C`nRAM $(Fmt $r.ramUsada 1)/$(Fmt $total 0) GB"
         if ($script:ativos.Count) { $dica = "⚠ $($script:ativos.Count) alerta(s) · " + $dica }
     } catch {
         # 30 leituras sem resposta (1 min): o LibreHardwareMonitor parou.

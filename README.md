@@ -16,6 +16,7 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
   - **Todos os sensores** (seção recolhível): busca por nome, filtro por tipo e, em cada sensor, uma barra com a faixa mínimo–máximo e um ponto no valor atual.
   - **Modo compacto:** só a faixa de resumo, em duas colunas. A janela encolhe sozinha para caber os indicadores e volta ao tamanho anterior (inclusive maximizada) ao sair do modo.
 - **Várias placas de vídeo.** Com mais de uma GPU, o cartão ganha um seletor de placa; a faixa de resumo, o histórico, a VRAM, os alertas e o registro tratam cada placa separadamente. A VRAM total de cada uma é lida do Windows.
+- **Placas NVIDIA lidas também pelo driver.** O LibreHardwareMonitor mostra 0 MHz com a placa em repouso; nesse caso o painel usa o clock informado pelo `nvidia-smi`. O cartão mostra ainda a ligação PCIe (largura e geração, em destaque quando a placa está num slot ou riser mais estreito do que suporta) e o estado de energia (P0 a P8). Uma potência incompatível com a placa parada e fria é marcada com ⚠ e fica fora do indicador de Energia e do registro.
 - **Ícone na bandeja.** Mostra a temperatura mais alta entre CPU e GPU (a mais quente, se houver várias), na cor da faixa de temperatura. Uma faixinha embaixo do número indica de quem ele é: azul para CPU, roxa para GPU. Dá para trocar para só CPU, só GPU ou alternar entre as duas.
 - **Uso por programa.** Os programas que mais usam a CPU (com a RAM de cada um) e a GPU (com o tipo de trabalho e a VRAM). As fontes são as mesmas do Gerenciador de Tarefas.
 - **Alertas** por notificação do Windows:
@@ -143,6 +144,7 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `GET /memoria` | Velocidade configurada da RAM, informada pelo Windows |
 | `GET /smart` | SMART lido pelo CrystalDiskInfo, por número de disco |
 | `GET /gpus` | Placas de vídeo e o tamanho real da VRAM de cada uma |
+| `GET /nvidia` | Placas NVIDIA pelo driver: clocks, estado de energia, ligação PCIe e limite de potência |
 | `GET /letras`, `GET /discos-estado` | Letras das unidades, estado dos discos e a última ação de ativar ou desativar |
 | `GET /disco-uso?n=<disco>` | O que está usando um disco (programas e torrents do qBittorrent) |
 | `GET/POST /config` | Lê ou grava os ajustes |

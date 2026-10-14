@@ -263,6 +263,10 @@ function Atender($ctx) {
                 } catch { }
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject $lista -Compress)))
             }
+            '/nvidia' {
+                $script:nvidiaPedido = Get-Date
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes($script:nvidiaJson))
+            }
             '/letras' {
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes($script:letrasJson))
             }
@@ -433,7 +437,9 @@ function Ler-Resumo {
     $somaW = 0.0; $temW = $false
     foreach ($hw in $r.gpus.Keys) {
         $g = $r.gpus[$hw]
-        if (-not [double]::IsNaN($g.w)) { $somaW += $g.w; $temW = $true }
+        # potência alta com a placa parada e fria é leitura errada do sensor da placa: fica fora da soma
+        $suspeita = $g.w -gt 60 -and $g.uso -lt 3 -and $g.temp -lt 45
+        if (-not [double]::IsNaN($g.w) -and -not $suspeita) { $somaW += $g.w; $temW = $true }
         if (-not [double]::IsNaN($g.temp) -and ([double]::IsNaN($r.gpu) -or $g.temp -gt $r.gpu)) { $r.gpu = $g.temp; $r.gpuUso = $g.uso; $r.gpuNome = $g.nome }
     }
     if ($temW) { $r.gpuW = $somaW }
@@ -893,9 +899,56 @@ $timerProc.Add_Tick({
     try { $script:procJson = $script:processos.Amostrar(8) } catch { }
 })
 
+# Placas NVIDIA direto do driver (nvidia-smi): clock em repouso, estado de energia e ligação PCIe,
+# que o LibreHardwareMonitor não informa ou informa zerado. A consulta leva ~200 ms, então roda como
+# processo à parte, a cada 4 s e só enquanto o painel está pedindo.
+$script:nvidiaJson = '[]'
+$script:nvidiaExe = Join-Path $env:SystemRoot 'System32\nvidia-smi.exe'
+if (-not (Test-Path -LiteralPath $script:nvidiaExe)) { $script:nvidiaExe = $null }
+$script:nvidiaProc = $null
+$script:nvidiaHora = [datetime]::MinValue
+$script:nvidiaPedido = [datetime]::MinValue
+function Nvidia-Num([string]$s) {
+    $v = 0.0
+    if ([double]::TryParse($s, [System.Globalization.NumberStyles]::Float, [cultureinfo]::InvariantCulture, [ref]$v)) { return [int][math]::Round($v) }
+    return $null
+}
+function Nvidia-Tick {
+    if (-not $script:nvidiaExe) { return }
+    $p = $script:nvidiaProc
+    if ($p) {
+        if (-not $p.HasExited) {
+            if (((Get-Date) - $script:nvidiaHora).TotalSeconds -gt 20) { try { $p.Kill() } catch { }; $p.Dispose(); $script:nvidiaProc = $null }
+            return
+        }
+        try {
+            $lista = @()
+            foreach ($linha in ($p.StandardOutput.ReadToEnd() -split "`n")) {
+                $c = @($linha.Trim() -split '\s*,\s*')
+                if ($c.Count -lt 9) { continue }
+                $lista += [ordered]@{ nome = $c[0]; clk = Nvidia-Num $c[1]; mem = Nvidia-Num $c[2]; pstate = $c[3]
+                                      gen = Nvidia-Num $c[4]; genMax = Nvidia-Num $c[5]; larg = Nvidia-Num $c[6]; largMax = Nvidia-Num $c[7]; limiteW = Nvidia-Num $c[8] }
+            }
+            $script:nvidiaJson = ConvertTo-Json -InputObject @($lista) -Compress
+        } catch { }
+        $p.Dispose(); $script:nvidiaProc = $null
+        return
+    }
+    if (((Get-Date) - $script:nvidiaPedido).TotalSeconds -gt 15) { return }
+    if (((Get-Date) - $script:nvidiaHora).TotalSeconds -lt 4) { return }
+    $script:nvidiaHora = Get-Date
+    try {
+        $si = New-Object System.Diagnostics.ProcessStartInfo
+        $si.FileName = $script:nvidiaExe
+        $si.Arguments = '--query-gpu=name,clocks.gr,clocks.mem,pstate,pcie.link.gen.gpucurrent,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max,power.limit --format=csv,noheader,nounits'
+        $si.UseShellExecute = $false; $si.RedirectStandardOutput = $true; $si.CreateNoWindow = $true
+        $script:nvidiaProc = [System.Diagnostics.Process]::Start($si)
+    } catch { $script:nvidiaProc = $null }
+}
+
 $timerLetras = New-Object System.Windows.Forms.Timer
 $timerLetras.Interval = 1500
-$timerLetras.Add_Tick({ Acao-Tick; Letras-Tick })
+$timerLetras.Add_Tick({ Acao-Tick; Letras-Tick; Nvidia-Tick })
 
 $contexto = New-Object System.Windows.Forms.ApplicationContext
 $itemSair.Add_Click({

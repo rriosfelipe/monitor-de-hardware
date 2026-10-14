@@ -395,7 +395,7 @@ body.compact .kpi .kv{font-size:24px}
       <div class="stats">
         <div><div class="lbl">Clock do núcleo</div><div class="big" style="color:var(--accent)"><span id="gpuClock">—</span> <small>MHz</small></div></div>
         <div><div class="lbl">Uso</div><div class="big"><span id="gpuLoad">—</span> <small>%</small></div></div>
-        <div><div class="lbl">Potência</div><div class="big"><span id="gpuPower">—</span> <small>W</small></div></div>
+        <div><div class="lbl" id="gpuPowerLbl">Potência</div><div class="big"><span id="gpuPower">—</span> <small>W</small></div></div>
         <div><div class="lbl" id="gpuHotLbl">Hotspot</div><div class="big"><span id="gpuHot">—</span> <small class="unit"></small></div></div>
       </div>
     </div>
@@ -409,6 +409,7 @@ body.compact .kpi .kv{font-size:24px}
       <div class="tile"><div class="tl">Ventoinha</div><div class="tv" id="gpuFan">—</div></div>
       <div class="tile"><div class="tl">Uso de memória</div><div class="tv"><span id="gpuMemLoad">—</span>%</div></div>
     </div>
+    <div class="row" id="gpuPcieRow" style="font-size:12px" hidden><span class="k">Ligação PCIe · estado</span><span class="mono" id="gpuPcie">—</span></div>
     <div>
       <div class="lbl" style="margin-bottom:8px" id="gpuProcsLbl">Programas usando a placa de vídeo</div>
       <div class="proc-head" aria-hidden="true"><span>Programa</span><span></span><span>GPU</span><span>VRAM</span></div>
@@ -558,6 +559,7 @@ body.compact .kpi .kv{font-size:24px}
   var hist = { cpu: [], gpus: {} };         // {t, temp, load}; gpus: um histórico por placa (HardwareId)
   var gpuSel = null;                        // placa mostrada no cartão
   try { gpuSel = localStorage.getItem('mh-gpu'); } catch (e) {}
+  var nvidia = {};                          // nome da placa -> leituras do driver NVIDIA (clock, estado, ligação PCIe)
   var vramReal = {};                        // nome da placa -> GB de VRAM (lido do Windows)
   var janela = 300;                         // segundos visíveis no gráfico
   try { janela = parseInt(localStorage.getItem('mh-janela'), 10) || 300; } catch (e) {}
@@ -945,9 +947,15 @@ body.compact .kpi .kv{font-size:24px}
     var u = toGB(varias && usadaWin ? usadaWin : (usadaPlaca || usadaWin));
     var tt = vramReal[g.top] != null ? vramReal[g.top] : toGB(total);
     if (isNaN(tt) && !isNaN(u) && livre) tt = u + toGB(livre);
+    var t = temp ? temp.value : NaN, lv = load ? load.value : NaN, w = pw ? pw.value : NaN;
+    // O LibreHardwareMonitor devolve 0 MHz com a placa NVIDIA em repouso: aí vale o clock informado pelo driver.
+    var nv = nvidia[g.top];
+    function clock(s, doDriver) { return s && s.value > 0 ? s.value : doDriver != null ? doDriver : s ? s.value : NaN; }
     return {
-      hid: g.hid, nome: g.top, curto: nomeCurto(g.top), t: temp ? temp.value : NaN, hot: hot, hotLbl: hotLbl,
-      clk: clk, mem: mem, lv: load ? load.value : NaN, memLoad: memLoad, w: pw ? pw.value : NaN,
+      hid: g.hid, nome: g.top, curto: nomeCurto(g.top), t: t, hot: hot, hotLbl: hotLbl, nv: nv,
+      clk: clock(clk, nv && nv.clk), mem: clock(mem, nv && nv.mem), lv: lv, memLoad: memLoad, w: w,
+      // potência alta com a placa parada e fria é leitura errada do sensor da placa: fica fora da soma de energia
+      wSusp: w > 60 && lv < 3 && t < 45,
       fanTxt: fan ? fmt(fan.value) + ' RPM' : (ctl ? fmt(ctl.value) + '%' : '—'),
       u: u, tt: tt, vp: !isNaN(u) && tt > 0 ? u / tt * 100 : NaN
     };
@@ -980,11 +988,26 @@ body.compact .kpi .kv{font-size:24px}
     var st = $('gpuStatus'); st.textContent = status(t); st.style.color = tone(t);
     setText('gpuHotLbl', sel ? sel.hotLbl : 'Hotspot');
     setText('gpuHot', fmtT(sel && sel.hot && sel.hot.value)); $('gpuHot').style.color = sel && sel.hot ? tone(sel.hot.value) : '';
-    setText('gpuClock', fmt(sel && sel.clk && sel.clk.value));
-    setText('gpuMem', fmt(sel && sel.mem && sel.mem.value));
+    setText('gpuClock', fmt(sel ? sel.clk : NaN));
+    setText('gpuMem', fmt(sel ? sel.mem : NaN));
     setText('gpuLoad', fmt(lv));
     setText('gpuMemLoad', fmt(sel && sel.memLoad && sel.memLoad.value));
     setText('gpuPower', fmt(sel ? sel.w : NaN));
+    var susp = !!(sel && sel.wSusp);
+    setText('gpuPowerLbl', susp ? 'Potência ⚠' : 'Potência');
+    $('gpuPower').parentNode.style.opacity = susp ? .45 : '';
+    $('gpuPowerLbl').title = $('gpuPower').parentNode.title = susp
+      ? 'Leitura não confiável: a placa está parada e fria, o que não combina com essa potência. O valor fica fora do indicador de Energia.' : '';
+    var nv = sel && sel.nv, pcie = $('gpuPcieRow');
+    pcie.hidden = !(nv && nv.larg);
+    if (nv && nv.larg) {
+      var estreita = nv.largMax > nv.larg;
+      setText('gpuPcie', 'x' + nv.larg + (estreita ? ' de x' + nv.largMax : '') + ' · Gen ' + nv.gen +
+        (nv.genMax > nv.gen ? ' de ' + nv.genMax : '') + (nv.pstate ? ' · ' + nv.pstate : ''));
+      $('gpuPcie').style.color = estreita ? 'var(--warm)' : '';
+      pcie.title = (estreita ? 'A placa suporta x' + nv.largMax + ', mas está ligada com ' + nv.larg + ' via: slot, riser ou adaptador estreito. ' : '') +
+        'A geração cai sozinha em repouso para economizar energia. P0 é desempenho máximo; P8 é repouso.';
+    }
     setText('gpuFan', sel ? sel.fanTxt : '—');
     setText('vramTxt', sel ? fmt(sel.u, 1) + ' / ' + fmt(sel.tt, 1) + ' GB' : '—');
     $('vramBar').style.width = (sel && !isNaN(sel.vp) ? sel.vp : 0).toFixed(1) + '%';
@@ -996,7 +1019,7 @@ body.compact .kpi .kv{font-size:24px}
     $('kGpus').innerHTML = (infos.length ? infos : [null]).map(function (i) {
       return '<div class="kpi"><div class="kh">' + icone('gpu') + esc(i && infos.length > 1 ? i.curto : 'GPU') + '</div>' +
         '<div class="kv"><span style="color:' + tone(i ? i.t : NaN) + '">' + fmtT(i ? i.t : NaN) + '</span><small>' + un() + '</small></div>' +
-        '<div class="ks">' + fmt(i ? i.lv : NaN) + '% · ' + fmt(i ? i.w : NaN) + ' W</div>' +
+        '<div class="ks">' + fmt(i ? i.lv : NaN) + '% · ' + fmt(i ? i.w : NaN) + (i && i.wSusp ? ' W ⚠' : ' W') + '</div>' +
         '<svg class="kspark" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke" points="' +
         (i ? pontosSpark(hist.gpus[i.hid]) : '') + '"/></svg></div>';
     }).join('');
@@ -1007,7 +1030,7 @@ body.compact .kpi .kv{font-size:24px}
         }).join('') + '</div>'
       : '<div class="kv">' + fmt(sel ? sel.vp : NaN) + '<small>%</small></div><div class="ks">' + (sel ? fmt(sel.u, 1) + ' / ' + fmt(sel.tt, 0) : '— / —') + ' GB</div>' +
         '<div class="kbar"><div style="width:' + (sel && !isNaN(sel.vp) ? sel.vp : 0).toFixed(1) + '%"></div></div>';
-    var ws = infos.map(function (i) { return i.w; }).filter(function (v) { return !isNaN(v); });
+    var ws = infos.filter(function (i) { return !i.wSusp; }).map(function (i) { return i.w; }).filter(function (v) { return !isNaN(v); });
     resumo.gpuW = ws.length ? ws.reduce(function (a, b) { return a + b; }, 0) : NaN;
     resumo.gpuWs = ws;
   }
@@ -1888,6 +1911,16 @@ body.compact .kpi .kv{font-size:24px}
   }
   tickGpus();
   setInterval(tickGpus, 60000);
+  function tickNvidia() {
+    if (document.hidden) return;
+    fetch('/nvidia', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (l) {
+      var novo = {};
+      [].concat(l || []).forEach(function (g) { if (!novo[g.nome]) novo[g.nome] = g; });
+      nvidia = novo;
+    }).catch(function () {});
+  }
+  tickNvidia();
+  setInterval(tickNvidia, 5000);
   tickDiscos();
   setInterval(function () { tickDiscos(); }, 3000);
 

@@ -59,17 +59,19 @@ select.gsel:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 #detalhes{display:flex;flex-direction:column;gap:20px}
 /* Processador e Placa de vídeo lado a lado; os cartões menores numa faixa abaixo. Em telas a partir de
-   1600 px a página usa a largura toda e os menores viram uma terceira coluna, para o essencial caber
-   numa tela sem rolar. */
+   1600 px a página usa a largura toda, os menores viram uma terceira coluna e o Armazenamento ocupa o
+   espaço sob Processador e Placa, para o essencial caber numa tela sem rolar. */
 .painel{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:20px;align-items:start}
 .lateral{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:start}
+#cardDiscos{grid-column:1/-1}
 @media (min-width:1600px){
   .wrap{max-width:1880px;padding-left:24px;padding-right:24px}
   .painel{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(340px,.7fr)}
-  .lateral{grid-column:auto;grid-template-columns:minmax(0,1fr)}
+  .lateral{grid-column:3;grid-row:1 / span 2;grid-template-columns:minmax(0,1fr)}
+  #cardDiscos{grid-column:1 / 3;grid-row:2}
 }
 /* discos em grade: cada um vira um bloco, já que a linha divisória não serve entre colunas */
-.discos{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:12px}
+.discos{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px}
 .discos .disco,.discos .disco:last-child{border:1px solid var(--line2);border-radius:10px;padding:12px}
 .discos>.empty{grid-column:1/-1}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
@@ -454,13 +456,13 @@ body.compact .kpi .kv{font-size:24px}
       <div class="list" id="volts" style="gap:8px"></div>
     </section>
   </div>
-</div>
 
-<section class="card" id="cardDiscos">
-  <h3 class="ttl"><svg class="ic" data-icon="disk" aria-hidden="true"></svg>Armazenamento</h3>
-  <p class="disco-acao" id="discoAcao" role="status" hidden></p>
-  <div class="discos" id="drives"><div class="empty">Nenhum disco reportado.</div></div>
-</section>
+  <section class="card" id="cardDiscos">
+    <h3 class="ttl"><svg class="ic" data-icon="disk" aria-hidden="true"></svg>Armazenamento</h3>
+    <p class="disco-acao" id="discoAcao" role="status" hidden></p>
+    <div class="discos" id="drives"><div class="empty">Nenhum disco reportado.</div></div>
+  </section>
+</div>
 
 
 <section class="card" id="cardRegistro" aria-labelledby="ttlRegistro">

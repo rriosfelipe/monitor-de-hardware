@@ -58,8 +58,20 @@ select.gsel:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .kpi .kbar>div{height:100%;background:var(--accent);transition:width .4s}
 
 #detalhes{display:flex;flex-direction:column;gap:20px}
-.grid-big{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:20px}
-.grid-small{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px}
+/* Processador e Placa de vídeo lado a lado; os cartões menores numa faixa abaixo. Em telas a partir de
+   1600 px a página usa a largura toda e os menores viram uma terceira coluna, para o essencial caber
+   numa tela sem rolar. */
+.painel{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:20px;align-items:start}
+.lateral{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:start}
+@media (min-width:1600px){
+  .wrap{max-width:1880px;padding-left:24px;padding-right:24px}
+  .painel{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(340px,.7fr)}
+  .lateral{grid-column:auto;grid-template-columns:minmax(0,1fr)}
+}
+/* discos em grade: cada um vira um bloco, já que a linha divisória não serve entre colunas */
+.discos{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:12px}
+.discos .disco,.discos .disco:last-child{border:1px solid var(--line2);border-radius:10px;padding:12px}
+.discos>.empty{grid-column:1/-1}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
 .card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .model{font-family:var(--mono);font-size:13px;color:var(--muted)}
@@ -342,7 +354,7 @@ body.compact .kpi .kv{font-size:24px}
 </section>
 
 <div id="detalhes">
-<div class="grid-big">
+<div class="painel">
   <section class="card" id="cardCpu">
     <div class="card-head"><h2 class="ttl"><svg class="ic" data-icon="cpu" aria-hidden="true"></svg>Processador</h2><span class="model" id="cpuModel">—</span></div>
     <div class="hero">
@@ -416,39 +428,40 @@ body.compact .kpi .kv{font-size:24px}
       <div class="procs" id="gpuProcs"><div class="empty">Carregando…</div></div>
     </div>
   </section>
+
+  <div class="lateral">
+    <section class="card">
+      <h3 class="ttl"><svg class="ic" data-icon="ram" aria-hidden="true"></svg>Memória RAM</h3>
+      <div class="mono" style="font-size:30px;font-weight:600"><span id="ramUsed">—</span><span style="font-size:15px;color:var(--muted)"> / <span id="ramTotal">—</span> GB</span></div>
+      <div class="track thick"><div id="ramBar" style="width:0%"></div></div>
+      <div class="list" style="gap:8px">
+        <div class="row"><span class="k">Em uso</span><span class="mono"><span id="ramPct">—</span>%</span></div>
+        <div class="row"><span class="k">Disponível</span><span class="mono"><span id="ramAvail">—</span> GB</span></div>
+        <div class="row"><span class="k">Frequência</span><span class="mono" id="ramFreq">—</span></div>
+        <div class="row"><span class="k">Pentes</span><span class="mono" id="ramDimms">—</span></div>
+        <div class="row"><span class="k" title="Memória que os programas reservaram (RAM + arquivo de paginação). É o &quot;Confirmada&quot; do Gerenciador de Tarefas.">Memória confirmada</span><span class="mono"><span id="ramVirt">—</span> / <span id="ramVirtMax">—</span> GB</span></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 class="ttl"><svg class="ic" data-icon="fan" aria-hidden="true"></svg>Ventoinhas e bombas</h3>
+      <div class="list" id="fans"><div class="empty">Nenhuma ventoinha reportada.</div></div>
+    </section>
+
+    <section class="card">
+      <h3 class="ttl"><svg class="ic" data-icon="net" aria-hidden="true"></svg>Rede e tensões</h3>
+      <div class="list" id="net"><div class="empty">Nenhuma rede ativa.</div></div>
+      <div class="list" id="volts" style="gap:8px"></div>
+    </section>
+  </div>
 </div>
 
-<div class="grid-small">
-  <section class="card">
-    <h3 class="ttl"><svg class="ic" data-icon="ram" aria-hidden="true"></svg>Memória RAM</h3>
-    <div class="mono" style="font-size:30px;font-weight:600"><span id="ramUsed">—</span><span style="font-size:15px;color:var(--muted)"> / <span id="ramTotal">—</span> GB</span></div>
-    <div class="track thick"><div id="ramBar" style="width:0%"></div></div>
-    <div class="list" style="gap:8px">
-      <div class="row"><span class="k">Em uso</span><span class="mono"><span id="ramPct">—</span>%</span></div>
-      <div class="row"><span class="k">Disponível</span><span class="mono"><span id="ramAvail">—</span> GB</span></div>
-      <div class="row"><span class="k">Frequência</span><span class="mono" id="ramFreq">—</span></div>
-      <div class="row"><span class="k">Pentes</span><span class="mono" id="ramDimms">—</span></div>
-      <div class="row"><span class="k" title="Memória que os programas reservaram (RAM + arquivo de paginação). É o &quot;Confirmada&quot; do Gerenciador de Tarefas.">Memória confirmada</span><span class="mono"><span id="ramVirt">—</span> / <span id="ramVirtMax">—</span> GB</span></div>
-    </div>
-  </section>
+<section class="card" id="cardDiscos">
+  <h3 class="ttl"><svg class="ic" data-icon="disk" aria-hidden="true"></svg>Armazenamento</h3>
+  <p class="disco-acao" id="discoAcao" role="status" hidden></p>
+  <div class="discos" id="drives"><div class="empty">Nenhum disco reportado.</div></div>
+</section>
 
-  <section class="card">
-    <h3 class="ttl"><svg class="ic" data-icon="disk" aria-hidden="true"></svg>Armazenamento</h3>
-    <p class="disco-acao" id="discoAcao" role="status" hidden></p>
-    <div class="list" id="drives"><div class="empty">Nenhum disco reportado.</div></div>
-  </section>
-
-  <section class="card">
-    <h3 class="ttl"><svg class="ic" data-icon="fan" aria-hidden="true"></svg>Ventoinhas e bombas</h3>
-    <div class="list" id="fans"><div class="empty">Nenhuma ventoinha reportada.</div></div>
-  </section>
-
-  <section class="card">
-    <h3 class="ttl"><svg class="ic" data-icon="net" aria-hidden="true"></svg>Rede e tensões</h3>
-    <div class="list" id="net"><div class="empty">Nenhuma rede ativa.</div></div>
-    <div class="list" id="volts" style="gap:8px"></div>
-  </section>
-</div>
 
 <section class="card" id="cardRegistro" aria-labelledby="ttlRegistro">
   <div class="card-head">

@@ -59,18 +59,25 @@ select.gsel:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 #detalhes{display:flex;flex-direction:column;gap:20px}
 /* Processador e Placa de vídeo lado a lado; os cartões menores numa faixa abaixo. Em telas a partir de
-   1600 px a página usa a largura toda, os menores viram uma terceira coluna e o Armazenamento ocupa o
-   espaço sob Processador e Placa, para o essencial caber numa tela sem rolar. */
+   1600 px a página usa a largura toda e a grade ganha duas linhas e três colunas: na de cima,
+   Processador, Placa e o grupo .lat-cima; na de baixo, Armazenamento e o grupo .lat-baixo (se houver).
+   O último cartão de cada grupo estica, para as bordas da coluna lateral coincidirem com as da grade. */
 .painel{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:20px;align-items:start}
 .lateral{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:start}
+.lat-cima,.lat-baixo{display:contents}
 #cardDiscos{grid-column:1/-1}
 /* Processador e Placa de vídeo com a mesma altura, sem degrau entre os dois */
 .painel>#cardCpu,.painel>#cardGpu{align-self:stretch}
 @media (min-width:1600px){
   .wrap{max-width:1880px;padding-left:24px;padding-right:24px}
   .painel{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(340px,.7fr)}
-  .lateral{grid-column:3;grid-row:1 / span 2;grid-template-columns:minmax(0,1fr)}
-  #cardDiscos{grid-column:1 / 3;grid-row:2}
+  .lateral{display:contents}
+  .lat-cima,.lat-baixo{display:flex;flex-direction:column;gap:20px;grid-column:3;align-self:stretch;min-width:0}
+  .lat-cima{grid-row:1}
+  .lat-baixo{grid-row:2}
+  .lat-cima>.card:last-child,.lat-baixo>.card:last-child{flex:1}
+  #cardDiscos{grid-column:1 / 3;grid-row:2;align-self:stretch}
+  .painel:not(:has(.lat-baixo)) #cardDiscos{grid-column:1 / -1}
 }
 /* discos em grade: cada um vira um bloco, já que a linha divisória não serve entre colunas */
 .discos{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px}
@@ -434,29 +441,31 @@ body.compact .kpi .kv{font-size:24px}
   </section>
 
   <div class="lateral">
-    <section class="card">
-      <h3 class="ttl"><svg class="ic" data-icon="ram" aria-hidden="true"></svg>Memória RAM</h3>
-      <div class="mono" style="font-size:30px;font-weight:600"><span id="ramUsed">—</span><span style="font-size:15px;color:var(--muted)"> / <span id="ramTotal">—</span> GB</span></div>
-      <div class="track thick"><div id="ramBar" style="width:0%"></div></div>
-      <div class="list" style="gap:8px">
-        <div class="row"><span class="k">Em uso</span><span class="mono"><span id="ramPct">—</span>%</span></div>
-        <div class="row"><span class="k">Disponível</span><span class="mono"><span id="ramAvail">—</span> GB</span></div>
-        <div class="row"><span class="k">Frequência</span><span class="mono" id="ramFreq">—</span></div>
-        <div class="row"><span class="k">Pentes</span><span class="mono" id="ramDimms">—</span></div>
-        <div class="row"><span class="k" title="Memória que os programas reservaram (RAM + arquivo de paginação). É o &quot;Confirmada&quot; do Gerenciador de Tarefas.">Memória confirmada</span><span class="mono"><span id="ramVirt">—</span> / <span id="ramVirtMax">—</span> GB</span></div>
-      </div>
-    </section>
+    <div class="lat-cima">
+      <section class="card">
+        <h3 class="ttl"><svg class="ic" data-icon="ram" aria-hidden="true"></svg>Memória RAM</h3>
+        <div class="mono" style="font-size:30px;font-weight:600"><span id="ramUsed">—</span><span style="font-size:15px;color:var(--muted)"> / <span id="ramTotal">—</span> GB</span></div>
+        <div class="track thick"><div id="ramBar" style="width:0%"></div></div>
+        <div class="list" style="gap:8px">
+          <div class="row"><span class="k">Em uso</span><span class="mono"><span id="ramPct">—</span>%</span></div>
+          <div class="row"><span class="k">Disponível</span><span class="mono"><span id="ramAvail">—</span> GB</span></div>
+          <div class="row"><span class="k">Frequência</span><span class="mono" id="ramFreq">—</span></div>
+          <div class="row"><span class="k">Pentes</span><span class="mono" id="ramDimms">—</span></div>
+          <div class="row"><span class="k" title="Memória que os programas reservaram (RAM + arquivo de paginação). É o &quot;Confirmada&quot; do Gerenciador de Tarefas.">Memória confirmada</span><span class="mono"><span id="ramVirt">—</span> / <span id="ramVirtMax">—</span> GB</span></div>
+        </div>
+      </section>
 
-    <section class="card">
-      <h3 class="ttl"><svg class="ic" data-icon="fan" aria-hidden="true"></svg>Ventoinhas e bombas</h3>
-      <div class="list" id="fans"><div class="empty">Nenhuma ventoinha reportada.</div></div>
-    </section>
+      <section class="card">
+        <h3 class="ttl"><svg class="ic" data-icon="fan" aria-hidden="true"></svg>Ventoinhas e bombas</h3>
+        <div class="list" id="fans"><div class="empty">Nenhuma ventoinha reportada.</div></div>
+      </section>
 
-    <section class="card">
-      <h3 class="ttl"><svg class="ic" data-icon="net" aria-hidden="true"></svg>Rede e tensões</h3>
-      <div class="list" id="net"><div class="empty">Nenhuma rede ativa.</div></div>
-      <div class="list" id="volts" style="gap:8px"></div>
-    </section>
+      <section class="card">
+        <h3 class="ttl"><svg class="ic" data-icon="net" aria-hidden="true"></svg>Rede e tensões</h3>
+        <div class="list" id="net"><div class="empty">Nenhuma rede ativa.</div></div>
+        <div class="list" id="volts" style="gap:8px"></div>
+      </section>
+    </div>
   </div>
 
   <section class="card" id="cardDiscos">

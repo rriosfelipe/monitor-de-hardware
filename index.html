@@ -64,6 +64,8 @@ select.gsel:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .painel{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:20px;align-items:start}
 .lateral{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:start}
 #cardDiscos{grid-column:1/-1}
+/* Processador e Placa de vídeo com a mesma altura, sem degrau entre os dois */
+.painel>#cardCpu,.painel>#cardGpu{align-self:stretch}
 @media (min-width:1600px){
   .wrap{max-width:1880px;padding-left:24px;padding-right:24px}
   .painel{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(340px,.7fr)}
@@ -1667,7 +1669,7 @@ body.compact .kpi .kv{font-size:24px}
     if (paused || compacto) return;
     fetch('/processos', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
       if (j.erro) { $('cpuProcs').innerHTML = $('gpuProcs').innerHTML = '<div class="empty">' + esc(j.erro) + '</div>'; return; }
-      $('cpuProcs').innerHTML = j.cpu.length ? j.cpu.slice(0, 6).map(function (p) { return linhaProc(p); }).join('') : '<div class="empty">Medindo…</div>';
+      $('cpuProcs').innerHTML = j.cpu.length ? j.cpu.slice(0, 10).map(function (p) { return linhaProc(p); }).join('') : '<div class="empty">Medindo…</div>';
       $('gpuProcs').innerHTML = j.gpu.length ? j.gpu.slice(0, 6).map(function (p) { return linhaProc(p, nomeMotor(p.motor)); }).join('') : '<div class="empty">Nenhum programa usando a GPU.</div>';
     }).catch(function () {});
   }

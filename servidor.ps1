@@ -107,7 +107,7 @@ $script:janelaVezes = 0
 function Janela-Tick {
     if (-not $script:janelaOk) { return }
     $prefixo = 'Monitor de Hardware · '
-    if (((Get-Date) - $script:janelaAbrindo).TotalSeconds -lt 20) {
+    if (((Get-Date) - $script:janelaAbrindo).TotalSeconds -lt 45) {
         # janela recém-aberta: aplica o último tamanho assim que ela aparece (duas vezes, porque o Edge
         # ainda ajusta a janela logo depois de criá-la); até lá não guarda nada
         $c = @($script:janelaUltima -split ',')
@@ -130,7 +130,7 @@ function Janela-Abrindo { $script:janelaAbrindo = Get-Date; $script:janelaVezes 
 # A página da janela nova pediu para encolher (abriu no modo compacto): aplica antes o tamanho guardado,
 # para que "Completo" volte a ele, e deixa a janela por conta da página dali em diante.
 function Janela-PaginaAssumiu {
-    if (((Get-Date) - $script:janelaAbrindo).TotalSeconds -ge 20) { return }
+    if (((Get-Date) - $script:janelaAbrindo).TotalSeconds -ge 45) { return }
     $script:janelaAbrindo = [datetime]::MinValue
     $c = @($script:janelaUltima -split ',')
     if ($c.Count -ne 5) { return }

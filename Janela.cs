@@ -134,6 +134,57 @@ namespace MonitorHW
             return true;
         }
 
+        // ---- Identidade própria na barra de tarefas ----
+        // Sem isso o Windows agrupa a janela com o Edge e pode mostrar o ícone dele. Com um ID próprio,
+        // ela vira um programa à parte: ícone do monitor, e "fixar na barra" reabre o monitor, não o Edge.
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        struct PROPERTYKEY { public Guid Fmt; public uint Pid; }
+        [StructLayout(LayoutKind.Explicit)]
+        struct PROPVARIANT { [FieldOffset(0)] public ushort Vt; [FieldOffset(8)] public IntPtr Ptr; }
+        [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IPropertyStore
+        {
+            int GetCount(out uint c);
+            int GetAt(uint i, out PROPERTYKEY k);
+            int GetValue(ref PROPERTYKEY k, out PROPVARIANT v);
+            int SetValue(ref PROPERTYKEY k, ref PROPVARIANT v);
+            int Commit();
+        }
+        [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(IntPtr h, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore ps);
+        static IntPtr identificada;
+
+        static void Gravar(IPropertyStore ps, uint pid, string valor)
+        {
+            var k = new PROPERTYKEY();
+            k.Fmt = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");   // PKEY_AppUserModel_*
+            k.Pid = pid;
+            var v = new PROPVARIANT();
+            v.Vt = 31;                                                  // VT_LPWSTR
+            v.Ptr = Marshal.StringToCoTaskMemUni(valor);
+            try { int hr = ps.SetValue(ref k, ref v); if (hr != 0) throw new Exception("SetValue " + pid + ": 0x" + hr.ToString("X")); } finally { Marshal.FreeCoTaskMem(v.Ptr); }
+        }
+
+        // Aplica uma vez por janela; devolve true quando aplicou agora.
+        public static bool Identificar(string prefixo, string id, string icone, string comando, string nome)
+        {
+            IntPtr h = AcharApp(prefixo);
+            if (h == IntPtr.Zero || h == identificada) return false;
+            Guid iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
+            IPropertyStore ps;
+            if (SHGetPropertyStoreForWindow(h, ref iid, out ps) != 0) return false;
+            try
+            {
+                Gravar(ps, 2, comando);   // RelaunchCommand
+                Gravar(ps, 3, icone);     // RelaunchIconResource
+                Gravar(ps, 4, nome);      // RelaunchDisplayNameResource
+                Gravar(ps, 5, id);        // ID
+                int hc = ps.Commit(); if (hc != 0) throw new Exception("Commit: 0x" + hc.ToString("X"));
+            }
+            finally { Marshal.ReleaseComObject(ps); }
+            identificada = h;
+            return true;
+        }
+
         public static string Restaurar(string titulo)
         {
             if (!temSalvo) return "nada";

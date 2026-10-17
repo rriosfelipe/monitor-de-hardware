@@ -120,6 +120,10 @@ function Janela-Tick {
         } catch { $script:janelaAbrindo = [datetime]::MinValue }
         return
     }
+    try {
+        $cmd = '"' + (Join-Path $PSHOME 'powershell.exe') + '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $raiz 'servidor.ps1') + '"'
+        [void][MonitorHW.Janela]::Identificar($prefixo, 'FelipeRocesRios.MonitorDeHardware', "$iconeArquivo,0", $cmd, 'Monitor de Hardware')
+    } catch { }
     try { $p = [MonitorHW.Janela]::Posicao($prefixo) } catch { return }
     if ($p -and $p -ne $script:janelaUltima) {
         $script:janelaUltima = $p

@@ -18,6 +18,7 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
   - **All sensors** (collapsible section): a searchable, filterable list with a min–max range bar for every sensor.
   - **Compact mode** (*Compacto*): only the summary strip, in two columns. The window shrinks to fit it and returns to its previous size (maximized included) when you leave compact mode.
   - **Remembered window:** the dashboard reopens at the size and position you left it (maximized included).
+  - **Own taskbar icon:** the window is not grouped with Edge; pinned to the taskbar, it reopens the monitor.
 - **Multiple graphics cards.** With more than one GPU, the card gets a GPU selector; the summary strip, history, VRAM, alerts and log handle each card separately. Each card's total VRAM is read from Windows.
 - **NVIDIA cards are also read from the driver.** LibreHardwareMonitor reports 0 MHz while the card idles; the dashboard then uses the clock reported by `nvidia-smi`. The card also shows the PCIe link (width and generation, highlighted when the card sits in a slot or riser narrower than it supports) and the power state (P0 to P8). A power reading that cannot be true for an idle, cool card is flagged with ⚠ and left out of the power indicator and the log.
 - **Tray icon.** Shows the hotter of CPU and GPU (the hottest GPU if there are several), colored by temperature band. A thin stripe under the number tells you which one it is: blue for CPU, purple for GPU. You can switch it to CPU only, GPU only or alternating.

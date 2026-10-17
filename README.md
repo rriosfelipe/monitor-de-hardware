@@ -15,6 +15,7 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
   - Clock e uso por núcleo, em seção recolhível.
   - **Todos os sensores** (seção recolhível): busca por nome, filtro por tipo e, em cada sensor, uma barra com a faixa mínimo–máximo e um ponto no valor atual.
   - **Modo compacto:** só a faixa de resumo, em duas colunas. A janela encolhe sozinha para caber os indicadores e volta ao tamanho anterior (inclusive maximizada) ao sair do modo.
+  - **Janela lembrada:** o painel reabre no tamanho e na posição em que foi deixado (maximizado, inclusive).
 - **Várias placas de vídeo.** Com mais de uma GPU, o cartão ganha um seletor de placa; a faixa de resumo, o histórico, a VRAM, os alertas e o registro tratam cada placa separadamente. A VRAM total de cada uma é lida do Windows.
 - **Placas NVIDIA lidas também pelo driver.** O LibreHardwareMonitor mostra 0 MHz com a placa em repouso; nesse caso o painel usa o clock informado pelo `nvidia-smi`. O cartão mostra ainda a ligação PCIe (largura e geração, em destaque quando a placa está num slot ou riser mais estreito do que suporta) e o estado de energia (P0 a P8). Uma potência incompatível com a placa parada e fria é marcada com ⚠ e fica fora do indicador de Energia e do registro.
 - **Ícone na bandeja.** Mostra a temperatura mais alta entre CPU e GPU (a mais quente, se houver várias), na cor da faixa de temperatura. Uma faixinha embaixo do número indica de quem ele é: azul para CPU, roxa para GPU. Dá para trocar para só CPU, só GPU ou alternar entre as duas.
@@ -129,6 +130,7 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `config.json` | Cores, faixas de temperatura e opções de alertas e do ícone. Apagar volta ao padrão. |
 | `alertas-estado.json` | Quando cada alerta foi mostrado, para não repetir a cada inicialização. Apagar zera esse controle. |
 | `letras-ultimas.json` | Última letra conhecida de cada disco, mostrada enquanto ele estiver desativado. |
+| `janela.json` | Último tamanho e posição da janela do painel, reaplicados quando ela abre. |
 | `registros/` | Registros diários: `AAAA-MM-DD.csv` (CPU, GPU, uso, potência, RAM) e `discos-AAAA-MM-DD.csv` (temperatura de cada disco e de cada GPU). Separador `;` e vírgula decimal, como no Excel brasileiro. Cerca de 0,8 MB por dia; os arquivos com mais de 30 dias são apagados sozinhos. |
 
 ### Endereços HTTP (só no localhost)
@@ -150,6 +152,7 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `GET/POST /config` | Lê ou grava os ajustes |
 | `POST /discos-estado` | Ativa ou desativa um disco externo |
 | `POST /janela` | Encolhe ou restaura a janela do painel (modo compacto) |
+| `POST /janela-aberta` | Avisa que uma janela nova do painel abriu, para aplicar o tamanho guardado |
 | `POST /abrir-registros` | Abre a pasta dos CSV no Explorer |
 
 ## Segurança

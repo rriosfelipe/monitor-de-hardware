@@ -84,6 +84,55 @@ namespace MonitorHW
             return "ok";
         }
 
+        // ---- Tamanho e posição guardados entre aberturas ----
+        delegate bool EnumProc(IntPtr h, IntPtr l);
+        [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+        [StructLayout(LayoutKind.Sequential)]
+        struct POINT { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)]
+        struct WINDOWPLACEMENT { public int Tam, Flags, Mostrar; public POINT Min, Max; public RECT Normal; }
+        [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT p);
+
+        // A janela própria do painel (Edge em modo aplicativo): o título é só o da página.
+        // Abas comuns de navegador levam o nome do navegador no título e ficam de fora.
+        static IntPtr AcharApp(string prefixo)
+        {
+            IntPtr achada = IntPtr.Zero;
+            EnumWindows(delegate (IntPtr h, IntPtr l)
+            {
+                if (!IsWindowVisible(h)) return true;
+                var sb = new StringBuilder(256);
+                GetWindowText(h, sb, 256);
+                string t = sb.ToString();
+                if (t.StartsWith(prefixo) && t.IndexOf(" - ") < 0 && t.IndexOf(" — ") < 0) { achada = h; return false; }
+                return true;
+            }, IntPtr.Zero);
+            return achada;
+        }
+
+        // "x,y,largura,altura,max" com o tamanho normal (o de antes de maximizar); "" se minimizada ou no modo compacto.
+        public static string Posicao(string prefixo)
+        {
+            IntPtr h = AcharApp(prefixo);
+            if (h == IntPtr.Zero || IsIconic(h) || temSalvo) return "";
+            var p = new WINDOWPLACEMENT();
+            p.Tam = Marshal.SizeOf(typeof(WINDOWPLACEMENT));
+            if (!GetWindowPlacement(h, ref p)) return "";
+            RECT r = p.Normal;
+            return r.L + "," + r.T + "," + (r.R - r.L) + "," + (r.B - r.T) + "," + (IsZoomed(h) ? 1 : 0);
+        }
+
+        public static bool Colocar(string prefixo, int x, int y, int largura, int altura, bool max)
+        {
+            IntPtr h = AcharApp(prefixo);
+            if (h == IntPtr.Zero) return false;
+            if (IsZoomed(h)) ShowWindow(h, 9);   // SW_RESTORE
+            Posicionar(h, x, y, largura, altura);
+            if (max) ShowWindow(h, 3);           // SW_MAXIMIZE
+            return true;
+        }
+
         public static string Restaurar(string titulo)
         {
             if (!temSalvo) return "nada";

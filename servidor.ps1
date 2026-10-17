@@ -95,9 +95,43 @@ function Salvar-Config($c) {
 }
 
 # Abre o painel numa janela própria (modo aplicativo do Edge), ou traz para frente a que já está aberta.
+# Tamanho e posição da janela do painel: guardados quando mudam e reaplicados quando ela abre,
+# porque o Edge abre a janela de aplicativo sempre no tamanho pedido na linha de comando.
+$arquivoJanela = Join-Path $raiz 'janela.json'
+$script:janelaUltima = ''
+if (Test-Path -LiteralPath $arquivoJanela) {
+    try { $script:janelaUltima = [string]([System.IO.File]::ReadAllText($arquivoJanela, $utf8) | ConvertFrom-Json).posicao } catch { }
+}
+$script:janelaAbrindo = [datetime]::MinValue
+$script:janelaVezes = 0
+function Janela-Tick {
+    if (-not $script:janelaOk) { return }
+    $prefixo = 'Monitor de Hardware · '
+    if (((Get-Date) - $script:janelaAbrindo).TotalSeconds -lt 20) {
+        # janela recém-aberta: aplica o último tamanho assim que ela aparece (duas vezes, porque o Edge
+        # ainda ajusta a janela logo depois de criá-la); até lá não guarda nada
+        $c = @($script:janelaUltima -split ',')
+        if ($c.Count -ne 5) { $script:janelaAbrindo = [datetime]::MinValue; return }
+        try {
+            if ([MonitorHW.Janela]::Colocar($prefixo, [int]$c[0], [int]$c[1], [int]$c[2], [int]$c[3], ($c[4] -eq '1'))) {
+                $script:janelaVezes++
+                if ($script:janelaVezes -ge 2) { $script:janelaAbrindo = [datetime]::MinValue }
+            }
+        } catch { $script:janelaAbrindo = [datetime]::MinValue }
+        return
+    }
+    try { $p = [MonitorHW.Janela]::Posicao($prefixo) } catch { return }
+    if ($p -and $p -ne $script:janelaUltima) {
+        $script:janelaUltima = $p
+        try { [System.IO.File]::WriteAllText($arquivoJanela, (ConvertTo-Json -InputObject @{ posicao = $p } -Compress), $utf8) } catch { }
+    }
+}
+function Janela-Abrindo { $script:janelaAbrindo = Get-Date; $script:janelaVezes = 0 }
+
+# Devolve $true quando abriu uma janela nova (e não só trouxe a existente para a frente).
 function Abrir-Janela {
     $shell = New-Object -ComObject WScript.Shell
-    if ($shell.AppActivate('Monitor de Hardware · ')) { return }
+    if ($shell.AppActivate('Monitor de Hardware · ')) { return $false }
     $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
               "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") |
             Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
@@ -105,8 +139,11 @@ function Abrir-Janela {
         $perfil = Join-Path $env:LOCALAPPDATA 'MonitorHardware\navegador'
         Start-Process -FilePath $edge -ArgumentList @("--app=$endereco", "--user-data-dir=`"$perfil`"",
             '--no-first-run', '--no-default-browser-check', '--window-size=1440,960')
+        Janela-Abrindo
+        return $true
     } else {
         Start-Process $endereco
+        return $false
     }
 }
 
@@ -116,7 +153,11 @@ $listener.Prefixes.Add($endereco)
 try {
     $listener.Start()
 } catch {
-    if (-not $NaoAbrirNavegador) { Abrir-Janela }
+    # A janela é aberta por aqui (este processo foi iniciado pelo clique, então pode trazê-la para a frente);
+    # o monitor que já está rodando só recebe o aviso para aplicar o tamanho guardado.
+    if (-not $NaoAbrirNavegador -and (Abrir-Janela)) {
+        try { Invoke-WebRequest "$($endereco)janela-aberta" -Method Post -UseBasicParsing -TimeoutSec 3 | Out-Null } catch { }
+    }
     exit 0
 }
 
@@ -222,6 +263,11 @@ function Atender($ctx) {
                 $n = -1
                 [void][int]::TryParse($ctx.Request.QueryString['n'], [ref]$n)
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject (Uso-Disco $n) -Compress)))
+            }
+            '/janela-aberta' {
+                if ($ctx.Request.HttpMethod -ne 'POST') { Responder $res 405 'text/plain; charset=utf-8' ($utf8.GetBytes('Use POST')); return }
+                Janela-Abrindo
+                Responder $res 204 'text/plain; charset=utf-8' ([byte[]]@())
             }
             '/janela' {
                 # Só o próprio painel; e só a janela cujo título é exatamente o do painel.
@@ -948,7 +994,7 @@ function Nvidia-Tick {
 
 $timerLetras = New-Object System.Windows.Forms.Timer
 $timerLetras.Interval = 1500
-$timerLetras.Add_Tick({ Acao-Tick; Letras-Tick; Nvidia-Tick })
+$timerLetras.Add_Tick({ Acao-Tick; Letras-Tick; Nvidia-Tick; Janela-Tick })
 
 $contexto = New-Object System.Windows.Forms.ApplicationContext
 $itemSair.Add_Click({

@@ -17,6 +17,7 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
   - Per-core clocks and load (collapsible).
   - **All sensors** (collapsible section): a searchable, filterable list with a min–max range bar for every sensor.
   - **Compact mode** (*Compacto*): only the summary strip, in two columns. The window shrinks to fit it and returns to its previous size (maximized included) when you leave compact mode.
+  - **Remembered window:** the dashboard reopens at the size and position you left it (maximized included).
 - **Multiple graphics cards.** With more than one GPU, the card gets a GPU selector; the summary strip, history, VRAM, alerts and log handle each card separately. Each card's total VRAM is read from Windows.
 - **NVIDIA cards are also read from the driver.** LibreHardwareMonitor reports 0 MHz while the card idles; the dashboard then uses the clock reported by `nvidia-smi`. The card also shows the PCIe link (width and generation, highlighted when the card sits in a slot or riser narrower than it supports) and the power state (P0 to P8). A power reading that cannot be true for an idle, cool card is flagged with ⚠ and left out of the power indicator and the log.
 - **Tray icon.** Shows the hotter of CPU and GPU (the hottest GPU if there are several), colored by temperature band. A thin stripe under the number tells you which one it is: blue for CPU, purple for GPU. You can switch it to CPU only, GPU only or alternating.
@@ -131,6 +132,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `config.json` | Colors, temperature bands, alert and icon settings |
 | `alertas-estado.json` | When each alert was last shown, so alerts don't repeat at every boot |
 | `letras-ultimas.json` | Last known letter of each drive, still shown while a drive is disabled |
+| `janela.json` | Last size and position of the dashboard window, reapplied when it opens |
 | `registros/` | Daily CSV logs: `YYYY-MM-DD.csv` and `discos-YYYY-MM-DD.csv`. They use `;` as separator and a decimal comma (Brazilian Excel format), about 0.8 MB per day. |
 
 ### HTTP endpoints (localhost only)
@@ -152,6 +154,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `GET/POST /config` | Read or save settings |
 | `POST /discos-estado` | Enable or disable an external drive |
 | `POST /janela` | Shrink or restore the dashboard window (compact mode) |
+| `POST /janela-aberta` | Tells the server a new dashboard window opened, so it applies the saved size |
 | `POST /abrir-registros` | Open the CSV folder in Explorer |
 
 ## Security notes

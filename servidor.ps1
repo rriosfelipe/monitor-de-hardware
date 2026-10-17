@@ -499,6 +499,7 @@ function Ler-Resumo {
         if (-not [double]::IsNaN($g.temp) -and ([double]::IsNaN($r.gpu) -or $g.temp -gt $r.gpu)) { $r.gpu = $g.temp; $r.gpuUso = $g.uso; $r.gpuNome = $g.nome }
     }
     if ($temW) { $r.gpuW = $somaW }
+    $script:discosVistos = @($r.discos.Keys)
     return $r
 }
 
@@ -653,6 +654,8 @@ if (Test-Path -LiteralPath $arquivoUltimas) {
 $script:letrasMapa = @{}
 $script:letrasTarefa = $null
 $script:letrasHora = [datetime]::MinValue
+$script:discosVistos = @()
+$script:letrasPedidas = New-Object 'System.Collections.Generic.HashSet[string]'
 function Letras-Tick {
     $t = $script:letrasTarefa
     if ($t) {
@@ -677,7 +680,14 @@ function Letras-Tick {
         $script:letrasTarefa = $null
         return
     }
-    if (((Get-Date) - $script:letrasHora).TotalMinutes -lt 10) { return }
+    # disco que apareceu depois da última consulta (HD externo ligado agora): consulta de novo já,
+    # uma vez por disco, em vez de esperar os 10 minutos
+    $novo = $false
+    foreach ($hw in $script:discosVistos) {
+        $m = [regex]::Match([string]$hw, '/(\d+)$')
+        if ($m.Success -and -not $script:letrasMapa.ContainsKey($m.Groups[1].Value) -and $script:letrasPedidas.Add($m.Groups[1].Value)) { $novo = $true }
+    }
+    if (-not $novo -and ((Get-Date) - $script:letrasHora).TotalMinutes -lt 10) { return }
     $script:letrasHora = Get-Date
     $ps = [PowerShell]::Create()
     [void]$ps.AddScript({

@@ -127,6 +127,15 @@ function Janela-Tick {
     }
 }
 function Janela-Abrindo { $script:janelaAbrindo = Get-Date; $script:janelaVezes = 0 }
+# A página da janela nova pediu para encolher (abriu no modo compacto): aplica antes o tamanho guardado,
+# para que "Completo" volte a ele, e deixa a janela por conta da página dali em diante.
+function Janela-PaginaAssumiu {
+    if (((Get-Date) - $script:janelaAbrindo).TotalSeconds -ge 20) { return }
+    $script:janelaAbrindo = [datetime]::MinValue
+    $c = @($script:janelaUltima -split ',')
+    if ($c.Count -ne 5) { return }
+    try { [void][MonitorHW.Janela]::Colocar('Monitor de Hardware · ', [int]$c[0], [int]$c[1], [int]$c[2], [int]$c[3], ($c[4] -eq '1')) } catch { }
+}
 
 # Devolve $true quando abriu uma janela nova (e não só trouxe a existente para a frente).
 function Abrir-Janela {
@@ -283,6 +292,7 @@ function Atender($ctx) {
                     $o = $corpo | ConvertFrom-Json
                     $titulo = [string]$o.titulo
                     if (-not $script:janelaOk -or -not $titulo.StartsWith('Monitor de Hardware · ')) { throw 'recusado' }
+                    if ($o.restaurar -ne $true) { Janela-PaginaAssumiu }
                     if ($o.restaurar -eq $true) {
                         $r = [MonitorHW.Janela]::Restaurar($titulo)
                     } elseif ($null -ne $o.dAltura) {

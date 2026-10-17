@@ -120,6 +120,7 @@ namespace MonitorHW
             p.Tam = Marshal.SizeOf(typeof(WINDOWPLACEMENT));
             if (!GetWindowPlacement(h, ref p)) return "";
             RECT r = p.Normal;
+            if (r.R - r.L < 700) return "";      // tamanho do modo compacto: não serve para reabrir
             return r.L + "," + r.T + "," + (r.R - r.L) + "," + (r.B - r.T) + "," + (IsZoomed(h) ? 1 : 0);
         }
 

@@ -242,6 +242,40 @@ function Atender($ctx) {
                 $json = if ($script:registro) { $script:registro.Serie($dias) } else { '{"erro":"Registro indisponível"}' }
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes($json))
             }
+            '/sessao' {
+                $req = $ctx.Request
+                if ($req.HttpMethod -eq 'POST') {
+                    # Só o próprio painel: mesma origem, JSON e corpo pequeno.
+                    if ($req.Headers['Origin'] -ne "http://localhost:$Porta" -or $req.ContentType -notlike 'application/json*' -or $req.ContentLength64 -gt 512) {
+                        Responder $res 403 'text/plain; charset=utf-8' ($utf8.GetBytes('Recusado'))
+                        return
+                    }
+                    $leitor = New-Object System.IO.StreamReader($req.InputStream, $utf8)
+                    $corpo = $leitor.ReadToEnd(); $leitor.Close()
+                    $r = 'inválido'
+                    try {
+                        $o = $corpo | ConvertFrom-Json
+                        if ($o.acao -eq 'parar') { Sessao-Parar 'parada por você'; $r = 'ok' }
+                        elseif ($o.acao -eq 'iniciar' -and [string]$o.hw -match '^/gpu-(nvidia|amd|intel)/\d+$') {
+                            $nm = [string]$o.nome
+                            if ($nm.Length -gt 80) { $nm = $nm.Substring(0, 80) }
+                            $r = Sessao-Iniciar ([string]$o.hw) $nm
+                        }
+                    } catch { $r = 'erro: ' + $_.Exception.Message }
+                    Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject @{ resultado = $r } -Compress)))
+                    return
+                }
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((Json-Sessao)))
+            }
+            '/abrir-sessoes' {
+                if ($ctx.Request.HttpMethod -ne 'POST' -or $ctx.Request.Headers['Origin'] -ne "http://localhost:$Porta") {
+                    Responder $res 403 'text/plain; charset=utf-8' ($utf8.GetBytes('Recusado'))
+                    return
+                }
+                if (-not (Test-Path -LiteralPath $pastaSessoes)) { [void](New-Item -ItemType Directory -Path $pastaSessoes) }
+                Start-Process explorer.exe $pastaSessoes
+                Responder $res 200 'text/plain; charset=utf-8' ($utf8.GetBytes('ok'))
+            }
             '/abrir-registros' {
                 # Só o próprio painel: POST da mesma origem.
                 if ($ctx.Request.HttpMethod -ne 'POST' -or $ctx.Request.Headers['Origin'] -ne "http://localhost:$Porta") {
@@ -1017,13 +1051,113 @@ function Nvidia-Tick {
     } catch { $script:nvidiaProc = $null }
 }
 
+# ---- Gravar sessão (cartão da GPU): uma placa, uma linha por segundo em registros\sessoes, e um resumo no fim.
+# Para sozinha 90 s depois que a carga termina, pelo botão, ou com 4 h.
+$pastaSessoes = Join-Path $pastaRegistros 'sessoes'
+$ptbr = [System.Globalization.CultureInfo]::GetCultureInfo('pt-BR')
+$script:sessao = $null
+$script:sessaoResumo = $null
+function Sessao-Leitura([string]$hw) {
+    $v = @{ clock = $NaN; mem = $NaN; w = $NaN; volt = $NaN; uso = $NaN; temp = $NaN; vram = $NaN; vramLhm = $NaN }
+    try { $texto = $utf8.GetString((Obter-Dados)) } catch { return $v }
+    foreach ($m in $padrao.Matches($texto)) {
+        $id = $m.Groups[3].Value
+        if (-not $id.StartsWith($hw + '/')) { continue }
+        $nome = $m.Groups[1].Value; $x = Numero $m.Groups[2].Value
+        switch ($id.Substring($hw.Length + 1) -replace '/.*$', '') {
+            'clock' { if ($nome -eq 'GPU Core') { $v.clock = $x } elseif ($nome -eq 'GPU Memory') { $v.mem = $x } }
+            'power' { if ([double]::IsNaN($v.w) -or $nome -eq 'GPU Package') { $v.w = $x } }
+            'voltage' { if ([double]::IsNaN($v.volt)) { $v.volt = $x } }
+            'load' { if ($nome -eq 'GPU Core') { $v.uso = $x } }
+            'temperature' { if ($nome -eq 'GPU Core' -or [double]::IsNaN($v.temp)) { $v.temp = $x } }
+            default { if ($nome -eq 'D3D Dedicated Memory Used') { $v.vram = $x } elseif ($nome -eq 'GPU Memory Used') { $v.vramLhm = $x } }
+        }
+    }
+    # com várias placas o LibreHardwareMonitor repete a VRAM da primeira; o contador do Windows é por placa
+    if ([double]::IsNaN($v.vram)) { $v.vram = $v.vramLhm }
+    return $v
+}
+function Sessao-Iniciar([string]$hw, [string]$nome) {
+    if ($script:sessao) { return 'já existe uma gravação em andamento' }
+    if (-not (Test-Path -LiteralPath $pastaSessoes)) { [void](New-Item -ItemType Directory -Path $pastaSessoes) }
+    $inicio = Get-Date
+    $curto = ((($nome -replace '^(NVIDIA|AMD|Intel\(R\)|Intel)\s+', '') -replace '^(GeForce|Radeon)\s+', '') -replace '[^\w]+', '-').Trim('-')
+    if (-not $curto) { $curto = 'gpu' }
+    $arq = Join-Path $pastaSessoes ($inicio.ToString('yyyy-MM-dd_HHmmss') + '_' + $curto + '.csv')
+    [System.IO.File]::WriteAllText($arq, "hora;clock_mhz;memoria_mhz;potencia_w;tensao_v;uso_pct;temp_c;vram_mb`r`n", $utf8)
+    $script:sessao = @{ hw = $hw; nome = $nome; inicio = $inicio; arquivo = $arq; amostras = (New-Object System.Collections.Generic.List[object]); viuCarga = $false; parado = 0 }
+    $script:sessaoResumo = $null
+    $timerSessao.Start()
+    return 'ok'
+}
+function Sessao-Num([double]$x, [string]$f) { if ([double]::IsNaN($x)) { return '' } return $x.ToString($f, $ptbr) }
+function Sessao-Tick {
+    $s = $script:sessao
+    if (-not $s) { $timerSessao.Stop(); return }
+    $v = Sessao-Leitura $s.hw
+    $s.amostras.Add($v)
+    $linha = (Get-Date).ToString('HH:mm:ss') + ';' + (Sessao-Num $v.clock '0') + ';' + (Sessao-Num $v.mem '0') + ';' + (Sessao-Num $v.w '0.0') + ';' +
+             (Sessao-Num $v.volt '0.000') + ';' + (Sessao-Num $v.uso '0') + ';' + (Sessao-Num $v.temp '0.0') + ';' + (Sessao-Num $v.vram '0')
+    try { [System.IO.File]::AppendAllText($s.arquivo, $linha + "`r`n", $utf8) } catch { }
+    if ($v.uso -ge 50) { $s.viuCarga = $true; $s.parado = 0 }
+    elseif ($s.viuCarga -and -not ($v.uso -ge 5)) { $s.parado++ }
+    else { $s.parado = 0 }
+    if ($s.parado -ge 90) { Sessao-Parar 'a carga terminou' }
+    elseif (((Get-Date) - $s.inicio).TotalHours -ge 4) { Sessao-Parar 'limite de 4 horas' }
+}
+# média, mínimo e máximo de um campo, ignorando leituras ausentes (e zeros, que são leituras vazias)
+function Sessao-Estat($lista, [string]$campo, [double]$minimo = 0) {
+    $x = @($lista | ForEach-Object { $_[$campo] } | Where-Object { -not [double]::IsNaN($_) -and $_ -gt $minimo })
+    if (-not $x.Count) { return $null }
+    return ($x | Measure-Object -Average -Minimum -Maximum)
+}
+function Sessao-Arred($x, [int]$casas = 0) { if ($null -eq $x) { return $null } return [math]::Round([double]$x, $casas) }
+function Sessao-Parar([string]$motivo) {
+    $s = $script:sessao
+    if (-not $s) { return }
+    $script:sessao = $null
+    $timerSessao.Stop()
+    $fim = Get-Date
+    $carga = @($s.amostras | Where-Object { $_.uso -ge 90 })
+    $ck = Sessao-Estat $carga 'clock'; $pw = Sessao-Estat $carga 'w'; $vt = Sessao-Estat $carga 'volt' 0.3
+    $tp = Sessao-Estat $s.amostras 'temp'; $vr = Sessao-Estat $s.amostras 'vram'
+    $abaixo = $null
+    if ($ck -and $carga.Count) { $abaixo = 100.0 * @($carga | Where-Object { $_.clock -lt 0.75 * $ck.Maximum }).Count / $carga.Count }
+    $resumo = [ordered]@{
+        placa = $s.nome; inicio = $s.inicio.ToString('s'); fim = $fim.ToString('s'); motivo = $motivo
+        segundos = [int]($fim - $s.inicio).TotalSeconds; amostras = $s.amostras.Count; emCarga = $carga.Count
+        clockMedio = Sessao-Arred $(if ($ck) { $ck.Average }); clockMin = Sessao-Arred $(if ($ck) { $ck.Minimum }); clockMax = Sessao-Arred $(if ($ck) { $ck.Maximum })
+        abaixoPct = Sessao-Arred $abaixo
+        potMedia = Sessao-Arred $(if ($pw) { $pw.Average }); potMax = Sessao-Arred $(if ($pw) { $pw.Maximum })
+        tensaoMedia = Sessao-Arred $(if ($vt) { $vt.Average }) 3
+        tempMax = Sessao-Arred $(if ($tp) { $tp.Maximum }) 1; vramMax = Sessao-Arred $(if ($vr) { $vr.Maximum })
+        arquivo = (Split-Path -Leaf $s.arquivo)
+    }
+    $script:sessaoResumo = $resumo
+    try { [System.IO.File]::WriteAllText(($s.arquivo -replace '\.csv$', '.json'), (ConvertTo-Json -InputObject $resumo), $utf8) } catch { }
+}
+function Json-Sessao {
+    $s = $script:sessao
+    $o = [ordered]@{ gravando = [bool]$s; resumo = $script:sessaoResumo }
+    if ($s) {
+        $o.placa = $s.nome; $o.hw = $s.hw; $o.segundos = [int]((Get-Date) - $s.inicio).TotalSeconds
+        $o.amostras = $s.amostras.Count; $o.emCarga = @($s.amostras | Where-Object { $_.uso -ge 90 }).Count
+        $o.viuCarga = $s.viuCarga
+    }
+    return ConvertTo-Json -InputObject $o -Compress -Depth 3
+}
+$timerSessao = New-Object System.Windows.Forms.Timer
+$timerSessao.Interval = 1000
+$timerSessao.Add_Tick({ Sessao-Tick })
+
 $timerLetras = New-Object System.Windows.Forms.Timer
 $timerLetras.Interval = 1500
 $timerLetras.Add_Tick({ Acao-Tick; Letras-Tick; Nvidia-Tick; Janela-Tick })
 
 $contexto = New-Object System.Windows.Forms.ApplicationContext
 $itemSair.Add_Click({
-    $timerHttp.Stop(); $timerIcone.Stop(); $timerProc.Stop(); $timerLetras.Stop()
+    Sessao-Parar 'monitor fechado'
+    $timerHttp.Stop(); $timerIcone.Stop(); $timerProc.Stop(); $timerLetras.Stop(); $timerSessao.Stop()
     $bandeja.Visible = $false
     $bandeja.Dispose()
 

@@ -23,6 +23,8 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
 - **NVIDIA cards are also read from the driver.** LibreHardwareMonitor reports 0 MHz while the card idles; the dashboard then uses the clock reported by `nvidia-smi`. The card also shows the PCIe link (width and generation, highlighted when the card sits in a slot or riser narrower than it supports) and the power state (P0 to P8). A power reading that cannot be true for an idle, cool card is flagged with ⚠ and left out of the power indicator and the log.
 - **Tray icon.** Shows the hotter of CPU and GPU (the hottest GPU if there are several), colored by temperature band. A thin stripe under the number tells you which one it is: blue for CPU, purple for GPU. You can switch it to CPU only, GPU only or alternating.
 - **Per-program usage.** The programs using the most CPU (with RAM) and the most GPU (with engine type and VRAM). Same data sources as Task Manager.
+- **Programs per card.** With more than one GPU, the list shows only the programs running on the card picked in the selector (Windows reports which card each program uses).
+- **Session recording.** The "Gravar" button on the GPU card records the selected card's clock, power, voltage, load, temperature and VRAM every second into a CSV in `registros/sessoes/`. It stops by itself 90 s after the load ends (or with the button) and shows a summary: time under load, average/min/max clock, how long it stayed below 75 % of the peak, power, voltage, temperature and VRAM.
 - **Alerts** as Windows notifications, with cooldowns:
 
   | Alert | Trigger |
@@ -135,6 +137,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `letras-ultimas.json` | Last known letter of each drive, still shown while a drive is disabled |
 | `janela.json` | Last size and position of the dashboard window, reapplied when it opens |
 | `registros/` | Daily CSV logs: `YYYY-MM-DD.csv` and `discos-YYYY-MM-DD.csv`. They use `;` as separator and a decimal comma (Brazilian Excel format), about 0.8 MB per day. |
+| `registros/sessoes/` | Sessions recorded with the GPU card's "Gravar" button: one CSV per session (one line per second) plus a JSON summary |
 
 ### HTTP endpoints (localhost only)
 
@@ -149,6 +152,8 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `GET /memoria` | Configured RAM speed, as reported by Windows |
 | `GET /smart` | SMART read by CrystalDiskInfo, per disk number |
 | `GET /gpus` | Graphics cards and their real VRAM size |
+| `GET/POST /sessao` | Session recording state and last summary; starts or stops a recording |
+| `POST /abrir-sessoes` | Opens the recorded sessions folder in Explorer |
 | `GET /nvidia` | NVIDIA cards from the driver: clocks, power state, PCIe link and power limit |
 | `GET /letras`, `GET /discos-estado` | Drive letters, disk state and the last enable/disable action |
 | `GET /disco-uso?n=<disk>` | What is using a drive (processes, qBittorrent torrents) |

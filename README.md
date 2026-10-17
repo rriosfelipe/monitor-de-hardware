@@ -21,6 +21,8 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
 - **Placas NVIDIA lidas também pelo driver.** O LibreHardwareMonitor mostra 0 MHz com a placa em repouso; nesse caso o painel usa o clock informado pelo `nvidia-smi`. O cartão mostra ainda a ligação PCIe (largura e geração, em destaque quando a placa está num slot ou riser mais estreito do que suporta) e o estado de energia (P0 a P8). Uma potência incompatível com a placa parada e fria é marcada com ⚠ e fica fora do indicador de Energia e do registro.
 - **Ícone na bandeja.** Mostra a temperatura mais alta entre CPU e GPU (a mais quente, se houver várias), na cor da faixa de temperatura. Uma faixinha embaixo do número indica de quem ele é: azul para CPU, roxa para GPU. Dá para trocar para só CPU, só GPU ou alternar entre as duas.
 - **Uso por programa.** Os programas que mais usam a CPU (com a RAM de cada um) e a GPU (com o tipo de trabalho e a VRAM). As fontes são as mesmas do Gerenciador de Tarefas.
+- **Programas por placa.** Com mais de uma GPU, a lista mostra só os programas da placa escolhida no seletor (o Windows informa em qual placa cada programa está).
+- **Gravar sessão.** O botão "Gravar" no cartão da GPU registra clock, potência, tensão, uso, temperatura e VRAM da placa selecionada a cada segundo, num CSV em `registros/sessoes/`. Para sozinho 90 s depois que a carga termina (ou pelo botão) e mostra o resumo: tempo em carga, clock médio, mínimo e máximo, quanto tempo ficou abaixo de 75 % do pico, potência, tensão, temperatura e VRAM.
 - **Alertas** por notificação do Windows:
 
   | Alerta | Quando | Repete |
@@ -133,6 +135,7 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `letras-ultimas.json` | Última letra conhecida de cada disco, mostrada enquanto ele estiver desativado. |
 | `janela.json` | Último tamanho e posição da janela do painel, reaplicados quando ela abre. |
 | `registros/` | Registros diários: `AAAA-MM-DD.csv` (CPU, GPU, uso, potência, RAM) e `discos-AAAA-MM-DD.csv` (temperatura de cada disco e de cada GPU). Separador `;` e vírgula decimal, como no Excel brasileiro. Cerca de 0,8 MB por dia; os arquivos com mais de 30 dias são apagados sozinhos. |
+| `registros/sessoes/` | Sessões gravadas pelo botão "Gravar" do cartão da GPU: um CSV por sessão (uma linha por segundo) e um JSON com o resumo. |
 
 ### Endereços HTTP (só no localhost)
 
@@ -147,6 +150,8 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `GET /memoria` | Velocidade configurada da RAM, informada pelo Windows |
 | `GET /smart` | SMART lido pelo CrystalDiskInfo, por número de disco |
 | `GET /gpus` | Placas de vídeo e o tamanho real da VRAM de cada uma |
+| `GET/POST /sessao` | Estado da gravação de sessão e resumo da última; inicia ou para a gravação |
+| `POST /abrir-sessoes` | Abre a pasta das sessões gravadas no Explorador |
 | `GET /nvidia` | Placas NVIDIA pelo driver: clocks, estado de energia, ligação PCIe e limite de potência |
 | `GET /letras`, `GET /discos-estado` | Letras das unidades, estado dos discos e a última ação de ativar ou desativar |
 | `GET /disco-uso?n=<disco>` | O que está usando um disco (programas e torrents do qBittorrent) |

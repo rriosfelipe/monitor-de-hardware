@@ -44,9 +44,78 @@ namespace MonitorHW
             public double MemMB;
             public string Motor;
             public double MotorPct;
+            public string Placa;
+        }
+
+        // ---- Placas de vídeo pelo LUID (o mesmo que aparece nos contadores de GPU), via DXGI ----
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct DXGI_ADAPTER_DESC1
+        {
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Description;
+            public uint VendorId, DeviceId, SubSysId, Revision;
+            public UIntPtr DedicatedVideoMemory, DedicatedSystemMemory, SharedSystemMemory;
+            public uint LuidLow;
+            public int LuidHigh;
+            public uint Flags;
+        }
+        [ComImport, Guid("29038f61-3839-4626-91fd-086879011a05"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IDXGIAdapter1
+        {
+            void SetPrivateData(); void SetPrivateDataInterface(); void GetPrivateData(); void GetParent();
+            void EnumOutputs(); void GetDesc(); void CheckInterfaceSupport();
+            [PreserveSig] int GetDesc1(out DXGI_ADAPTER_DESC1 d);
+        }
+        [ComImport, Guid("770aae78-f26f-4dba-a829-253c83d1b387"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IDXGIFactory1
+        {
+            void SetPrivateData(); void SetPrivateDataInterface(); void GetPrivateData(); void GetParent();
+            void EnumAdapters(); void MakeWindowAssociation(); void GetWindowAssociation(); void CreateSwapChain(); void CreateSoftwareAdapter();
+            [PreserveSig] int EnumAdapters1(uint i, out IDXGIAdapter1 a);
+        }
+        [DllImport("dxgi.dll")]
+        static extern int CreateDXGIFactory1([In] ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out IDXGIFactory1 f);
+
+        Dictionary<long, string> placas = new Dictionary<long, string>();
+        DateTime placasHora = DateTime.MinValue;
+
+        void LerPlacas()
+        {
+            placasHora = DateTime.UtcNow;
+            var d = new Dictionary<long, string>();
+            try
+            {
+                Guid iid = new Guid("770aae78-f26f-4dba-a829-253c83d1b387");
+                IDXGIFactory1 f;
+                if (CreateDXGIFactory1(ref iid, out f) != 0) return;
+                for (uint i = 0; i < 16; i++)
+                {
+                    IDXGIAdapter1 a;
+                    if (f.EnumAdapters1(i, out a) != 0) break;
+                    DXGI_ADAPTER_DESC1 desc;
+                    if (a.GetDesc1(out desc) == 0) d[((long)desc.LuidHigh << 32) | desc.LuidLow] = (desc.Description ?? "").Trim();
+                    Marshal.ReleaseComObject(a);
+                }
+                Marshal.ReleaseComObject(f);
+            }
+            catch { }
+            placas = d;
+        }
+
+        // "luid_0x00000000_0x0000D1B5" -> nome da placa ("" se não souber)
+        string Placa(string luid)
+        {
+            var m = reLuidPartes.Match(luid);
+            if (!m.Success) return "";
+            long chave = ((long)Convert.ToUInt32(m.Groups[1].Value, 16) << 32) | Convert.ToUInt32(m.Groups[2].Value, 16);
+            string nome;
+            if (placas.TryGetValue(chave, out nome)) return nome;
+            if ((DateTime.UtcNow - placasHora).TotalSeconds > 30) { LerPlacas(); if (placas.TryGetValue(chave, out nome)) return nome; }
+            return "";
         }
 
         static readonly Regex rePid = new Regex(@"^pid_(\d+)_");
+        static readonly Regex reLuid = new Regex(@"luid_0x[0-9A-Fa-f]+_0x[0-9A-Fa-f]+");
+        static readonly Regex reLuidPartes = new Regex(@"luid_0x([0-9A-Fa-f]+)_0x([0-9A-Fa-f]+)");
         static readonly Regex reMotor = new Regex(@"engtype_(.+)$");
         static readonly CultureInfo inv = CultureInfo.InvariantCulture;
 
@@ -61,6 +130,7 @@ namespace MonitorHW
             PdhAddEnglishCounter(query, @"\GPU Engine(*)\Utilization Percentage", IntPtr.Zero, out cUso);
             PdhAddEnglishCounter(query, @"\GPU Process Memory(*)\Dedicated Usage", IntPtr.Zero, out cMem);
             PdhCollectQueryData(query);
+            LerPlacas();
         }
 
         List<KeyValuePair<string, double>> Ler(IntPtr counter, uint formato)
@@ -122,50 +192,53 @@ namespace MonitorHW
             }
             cpuAnterior = atual;
 
-            // GPU: maior uso entre os motores de cada processo (3D, cópia, vídeo, computação) e VRAM dedicada.
+            // GPU: maior uso entre os motores de cada processo (3D, cópia, vídeo, computação) e VRAM dedicada,
+            // separados por placa (o LUID do contador diz em qual placa o processo está).
             PdhCollectQueryData(query);
             var motores = new Dictionary<string, double>();
             foreach (var kv in Ler(cUso, PDH_FMT_DOUBLE | PDH_FMT_NOCAP100))
             {
-                var mp = rePid.Match(kv.Key); var mm = reMotor.Match(kv.Key);
+                var mp = rePid.Match(kv.Key); var mm = reMotor.Match(kv.Key); var ml = reLuid.Match(kv.Key);
                 if (!mp.Success || !mm.Success) continue;
-                string chave = mp.Groups[1].Value + "|" + mm.Groups[1].Value;
+                string chave = mp.Groups[1].Value + "|" + (ml.Success ? ml.Value : "") + "|" + mm.Groups[1].Value;
                 double v;
                 motores[chave] = (motores.TryGetValue(chave, out v) ? v : 0) + kv.Value;
             }
             var gpu = new Dictionary<string, Grupo>(StringComparer.OrdinalIgnoreCase);
-            var pidsGpu = new Dictionary<int, Grupo>();
-            Func<int, Grupo> grupoGpu = pid =>
+            var pidsGpu = new Dictionary<string, Grupo>();
+            Func<int, string, Grupo> grupoGpu = (pid, luid) =>
             {
                 Grupo g;
-                if (pidsGpu.TryGetValue(pid, out g)) return g;
+                string chavePid = pid + "|" + luid;
+                if (pidsGpu.TryGetValue(chavePid, out g)) return g;
                 string nome;
                 if (!nomes.TryGetValue(pid, out nome)) nome = "PID " + pid;
-                g = Pegar(gpu, nome);
+                string placa = Placa(luid);
+                if (!gpu.TryGetValue(nome + "|" + placa, out g)) { g = new Grupo { Nome = nome, Placa = placa }; gpu[nome + "|" + placa] = g; }
                 g.Qtd++;
-                pidsGpu[pid] = g;
+                pidsGpu[chavePid] = g;
                 return g;
             };
-            var porPid = new Dictionary<int, double>();
-            var motorPorPid = new Dictionary<int, KeyValuePair<string, double>>();
+            var motorPorPid = new Dictionary<string, KeyValuePair<string, double>>();
             foreach (var kv in motores)
             {
                 var partes = kv.Key.Split('|');
-                int pid = int.Parse(partes[0]);
+                string chavePid = partes[0] + "|" + partes[1];
                 KeyValuePair<string, double> m;
-                if (!motorPorPid.TryGetValue(pid, out m) || kv.Value > m.Value) motorPorPid[pid] = new KeyValuePair<string, double>(partes[1], kv.Value);
+                if (!motorPorPid.TryGetValue(chavePid, out m) || kv.Value > m.Value) motorPorPid[chavePid] = new KeyValuePair<string, double>(partes[2], kv.Value);
             }
             foreach (var kv in motorPorPid)
             {
-                var g = grupoGpu(kv.Key);
+                var partes = kv.Key.Split('|');
+                var g = grupoGpu(int.Parse(partes[0]), partes[1]);
                 g.Pct += kv.Value.Value;
                 if (kv.Value.Value > g.MotorPct) { g.MotorPct = kv.Value.Value; g.Motor = kv.Value.Key; }
             }
             foreach (var kv in Ler(cMem, PDH_FMT_DOUBLE))
             {
-                var mp = rePid.Match(kv.Key);
+                var mp = rePid.Match(kv.Key); var ml = reLuid.Match(kv.Key);
                 if (!mp.Success) continue;
-                grupoGpu(int.Parse(mp.Groups[1].Value)).MemMB += kv.Value / 1048576.0;
+                grupoGpu(int.Parse(mp.Groups[1].Value), ml.Success ? ml.Value : "").MemMB += kv.Value / 1048576.0;
             }
 
             var sb = new StringBuilder();
@@ -183,14 +256,22 @@ namespace MonitorHW
             lista.RemoveAll(g => ehGpu ? (g.Pct < 0.1 && g.MemMB < 50) : g.Nome.Equals("Idle", StringComparison.OrdinalIgnoreCase));
             lista.Sort((a, b) => b.Pct != a.Pct ? b.Pct.CompareTo(a.Pct) : b.MemMB.CompareTo(a.MemMB));
             sb.Append('[');
-            for (int i = 0; i < lista.Count && i < limite; i++)
+            var porPlaca = new Dictionary<string, int>();
+            bool primeiro = true;
+            for (int i = 0; i < lista.Count; i++)
             {
                 var g = lista[i];
-                if (i > 0) sb.Append(',');
+                string pl = g.Placa ?? "";
+                int n;
+                porPlaca.TryGetValue(pl, out n);
+                if (n >= limite) continue;   // o limite vale para cada placa
+                porPlaca[pl] = n + 1;
+                if (!primeiro) sb.Append(',');
+                primeiro = false;
                 sb.Append("{\"nome\":\"").Append(Escapar(g.Nome)).Append("\",\"qtd\":").Append(g.Qtd)
                   .Append(",\"pct\":").Append(Math.Min(100, g.Pct).ToString("0.0", inv))
                   .Append(",\"memMB\":").Append(g.MemMB.ToString("0", inv));
-                if (ehGpu) sb.Append(",\"motor\":\"").Append(Escapar(g.Motor ?? "")).Append('"');
+                if (ehGpu) sb.Append(",\"motor\":\"").Append(Escapar(g.Motor ?? "")).Append("\",\"placa\":\"").Append(Escapar(g.Placa ?? "")).Append('"');
                 sb.Append('}');
             }
             sb.Append(']');

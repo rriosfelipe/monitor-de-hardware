@@ -194,6 +194,13 @@ details.hw[open] summary .chev{transform:rotate(90deg)}
 .aviso .x{flex-shrink:0;min-height:36px;min-width:36px;padding:0;margin:-6px -8px -6px 0;border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;border-radius:8px}
 .aviso .x:hover{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--text)}
 .avisos-acoes{display:flex;justify-content:flex-end}
+.sessao{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px}
+.sessao-cab{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sessao-st{font-size:13px;color:var(--muted);margin-top:2px;line-height:1.45}
+#btnSessao{flex-shrink:0;min-width:96px}
+#btnSessao.gravando{border-color:var(--hot);color:var(--hot)}
+.sessao-res-cab{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:var(--muted)}
+.sessao-res-cab button{min-height:32px;font-size:13px;padding:0 12px;flex-shrink:0}
 .sino-box{position:relative}
 .sino{position:relative;min-width:44px;padding:0 12px;display:inline-flex;align-items:center;justify-content:center}
 .sino.vazio{color:var(--muted)}
@@ -452,6 +459,13 @@ body.compact .kpi .kv{font-size:24px}
     </div>
     <div class="row" id="gpuPcieRow" style="font-size:12px" hidden><span class="k">Ligação PCIe · estado</span><span class="mono" id="gpuPcie">—</span></div>
     <div>
+      <div class="sessao" id="sessao" style="margin-bottom:16px">
+        <div class="sessao-cab">
+          <div><div class="lbl">Gravar sessão</div><div class="sessao-st" id="sessaoSt">Registra clock, potência, tensão, uso e VRAM da placa selecionada a cada segundo durante um teste.</div></div>
+          <button type="button" id="btnSessao">Gravar</button>
+        </div>
+        <div id="sessaoResumo" hidden></div>
+      </div>
       <div class="lbl" style="margin-bottom:8px" id="gpuProcsLbl">Programas usando a placa de vídeo</div>
       <div class="proc-head" aria-hidden="true"><span>Programa</span><span></span><span>GPU</span><span>VRAM</span></div>
       <div class="procs" id="gpuProcs"><div class="empty">Carregando…</div></div>
@@ -604,6 +618,7 @@ body.compact .kpi .kv{font-size:24px}
   var gpuSel = null;                        // placa mostrada no cartão
   try { gpuSel = localStorage.getItem('mh-gpu'); } catch (e) {}
   var nvidia = {};                          // nome da placa -> leituras do driver NVIDIA (clock, estado, ligação PCIe)
+  var gpuAtual = null;                      // placa mostrada no cartão (hid, nome)
   var vramReal = {};                        // nome da placa -> GB de VRAM (lido do Windows)
   var janela = 300;                         // segundos visíveis no gráfico
   try { janela = parseInt(localStorage.getItem('mh-janela'), 10) || 300; } catch (e) {}
@@ -1011,6 +1026,7 @@ body.compact .kpi .kv{font-size:24px}
     infos.forEach(function (i) { guardar(hist.gpus[i.hid] || (hist.gpus[i.hid] = []), i.t, i.lv); });
     var sel = infos.filter(function (i) { return i.hid === gpuSel; })[0] ||
       infos.filter(function (i) { return !integrada(i.nome); })[0] || infos[0];
+    gpuAtual = sel || null;
 
     // cabeçalho: nome fixo com uma placa, seletor com várias
     var caixa = $('gpuSel');
@@ -1026,7 +1042,7 @@ body.compact .kpi .kv{font-size:24px}
       caixa.hidden = true; $('gpuModel').hidden = false;
       setText('gpuModel', sel ? sel.nome : 'Nenhuma placa de vídeo reportada');
     }
-    setText('gpuProcsLbl', 'Programas usando a placa de vídeo' + (infos.length > 1 ? ' (todas as placas)' : ''));
+    setText('gpuProcsLbl', infos.length > 1 ? 'Programas usando esta placa' : 'Programas usando a placa de vídeo');
 
     var t = sel ? sel.t : NaN, lv = sel ? sel.lv : NaN;
     setText('gpuTemp', fmtT(t));
@@ -1084,6 +1100,7 @@ body.compact .kpi .kv{font-size:24px}
     try { localStorage.setItem('mh-gpu', gpuSel); } catch (e) {}
     this.blur();
     if (last) render(last, true);
+    desenharProcGpu();
   });
 
   function renderRam(hws) {
@@ -1698,9 +1715,75 @@ body.compact .kpi .kv{font-size:24px}
     fetch('/processos', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
       if (j.erro) { $('cpuProcs').innerHTML = $('gpuProcs').innerHTML = '<div class="empty">' + esc(j.erro) + '</div>'; return; }
       $('cpuProcs').innerHTML = j.cpu.length ? j.cpu.slice(0, 10).map(function (p) { return linhaProc(p); }).join('') : '<div class="empty">Medindo…</div>';
-      $('gpuProcs').innerHTML = j.gpu.length ? j.gpu.slice(0, 6).map(function (p) { return linhaProc(p, nomeMotor(p.motor)); }).join('') : '<div class="empty">Nenhum programa usando a GPU.</div>';
+      ultimoProc = j;
+      desenharProcGpu();
     }).catch(function () {});
   }
+  // Com várias placas, só os programas da placa escolhida no seletor (o Windows diz em qual placa cada um está).
+  var ultimoProc = null;
+  function desenharProcGpu() {
+    if (!ultimoProc || ultimoProc.erro) return;
+    var varias = !$('gpuSel').hidden, lista = ultimoProc.gpu || [];
+    if (varias && gpuAtual) lista = lista.filter(function (p) { return !p.placa || p.placa === gpuAtual.nome; });
+    $('gpuProcs').innerHTML = lista.length ? lista.slice(0, 6).map(function (p) { return linhaProc(p, nomeMotor(p.motor)); }).join('')
+      : '<div class="empty">Nenhum programa usando ' + (varias ? 'esta placa' : 'a GPU') + '.</div>';
+  }
+
+  // ---------- gravar sessão (o servidor grava; aqui só comanda e mostra)
+  var sessaoEstado = null, sessaoT = null;
+  function mmss(s) {
+    s = Math.max(0, Math.round(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0');
+  }
+  function nn(x, d) { return x == null ? '—' : fmt(x, d); }
+  function horaDe(iso) { var d = new Date(iso); return isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+  function tileS(rot, val, sub) { return '<div class="tile"><div class="tl">' + rot + '</div><div class="tv">' + val + '</div>' + (sub ? '<div class="ts">' + sub + '</div>' : '') + '</div>'; }
+  function desenharSessao(j) {
+    sessaoEstado = j;
+    var b = $('btnSessao');
+    b.disabled = false;
+    b.textContent = j.gravando ? 'Parar' : 'Gravar';
+    b.classList.toggle('gravando', !!j.gravando);
+    $('sessaoSt').textContent = j.gravando
+      ? 'Gravando ' + nomeCurto(j.placa) + ' · ' + mmss(j.segundos) + ' · ' + mmss(j.emCarga) + ' em carga · ' +
+        (j.viuCarga ? 'para sozinha 90 s depois que a carga terminar' : 'aguardando a carga começar')
+      : 'Registra clock, potência, tensão, uso e VRAM da placa selecionada a cada segundo durante um teste.';
+    var r = j.resumo, box = $('sessaoResumo');
+    box.hidden = !r || !!j.gravando;
+    if (!r || j.gravando) return;
+    box.innerHTML = '<div class="sessao-res-cab"><span>Última: ' + esc(nomeCurto(r.placa)) + ' · ' + mmss(r.segundos) + ' · terminou às ' + horaDe(r.fim) + ' (' + esc(r.motivo) + ')</span>' +
+      '<button type="button" id="btnSessaoPasta">Abrir pasta</button></div>' +
+      (r.emCarga ? '<div class="tiles3">' +
+        tileS('Em carga', mmss(r.emCarga), 'uso de 90% ou mais') +
+        tileS('Clock médio', nn(r.clockMedio) + ' MHz', nn(r.clockMin) + ' a ' + nn(r.clockMax) + ' MHz') +
+        tileS('Abaixo de 75% do pico', nn(r.abaixoPct) + '%', 'do tempo em carga') +
+        tileS('Potência lida', nn(r.potMedia) + ' W', 'máx. ' + nn(r.potMax) + ' W') +
+        tileS('Tensão média', r.tensaoMedia == null ? '—' : nn(r.tensaoMedia, 3) + ' V', 'em carga') +
+        tileS('Temp. máx. · VRAM máx.', (r.tempMax == null ? '—' : fmtT(r.tempMax) + un()) + ' · ' + (r.vramMax == null ? '—' : nn(r.vramMax / 1024, 1) + ' GB')) +
+        '</div>' : '<div class="sessao-st">A placa não chegou a 90% de uso durante a gravação; os dados estão no arquivo.</div>');
+  }
+  function tickSessao() {
+    clearTimeout(sessaoT);
+    fetch('/sessao', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+      desenharSessao(j);
+      sessaoT = setTimeout(tickSessao, j.gravando ? 1000 : 5000);
+    }).catch(function () { sessaoT = setTimeout(tickSessao, 5000); });
+  }
+  $('btnSessao').addEventListener('click', function () {
+    var b = this, gravando = sessaoEstado && sessaoEstado.gravando;
+    if (!gravando && !gpuAtual) return;
+    b.disabled = true;
+    var corpo = gravando ? { acao: 'parar' } : { acao: 'iniciar', hw: gpuAtual.hid, nome: gpuAtual.nome };
+    fetch('/sessao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) { if (r.resultado !== 'ok') $('sessaoSt').textContent = 'Não foi possível: ' + r.resultado; })
+      .catch(function () {}).then(function () { b.disabled = false; tickSessao(); });
+  });
+  $('sessao').addEventListener('click', function (e) {
+    if (e.target.id === 'btnSessaoPasta') fetch('/abrir-sessoes', { method: 'POST' }).catch(function () {});
+  });
+  tickSessao();
   tickProc();
   setInterval(tickProc, 2000);
 

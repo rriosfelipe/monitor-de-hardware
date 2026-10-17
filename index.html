@@ -194,6 +194,20 @@ details.hw[open] summary .chev{transform:rotate(90deg)}
 .aviso .x{flex-shrink:0;min-height:36px;min-width:36px;padding:0;margin:-6px -8px -6px 0;border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;border-radius:8px}
 .aviso .x:hover{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--text)}
 .avisos-acoes{display:flex;justify-content:flex-end}
+.sino-box{position:relative}
+.sino{position:relative;min-width:44px;padding:0 12px;display:inline-flex;align-items:center;justify-content:center}
+.sino.vazio{color:var(--muted)}
+.sino-n{position:absolute;top:3px;right:1px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--warm);color:var(--bg);font:600 11px/18px var(--mono);text-align:center}
+.sino-n.quente{background:var(--hot)}
+.sino-painel{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:400px;max-width:calc(100vw - 32px);max-height:70vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.45);padding:6px;font-family:var(--sans);color:var(--text);text-align:left}
+.sino-painel .nada{padding:14px 12px;color:var(--muted);font-size:14px}
+.sino-item{display:flex;gap:10px;padding:10px 12px}
+.sino-item+.sino-item{border-top:1px solid var(--line)}
+.sino-item .ic{color:var(--warm);margin-top:1px}
+.sino-item.quente .ic{color:var(--hot)}
+.sino-item strong{display:block;font-weight:600;font-size:14px}
+.sino-item span{display:block;color:var(--muted);font-size:13px;line-height:1.45}
+.sino-item small{display:block;color:var(--muted);font:12px var(--mono);margin-top:4px}
 .avisos-acoes button{min-height:32px;font-size:13px;padding:0 12px}
 .bdisco{min-height:32px;padding:0 12px;font-size:12px;margin-left:auto}
 .disco.off .k{color:var(--muted)!important}
@@ -310,6 +324,10 @@ body.compact .kpi .kv{font-size:24px}
   <div class="bar-top">
     <span class="pill"><span class="dot" id="dot"></span><span id="status">Aguardando dados</span></span>
     <span id="updated">—</span>
+    <span class="sino-box">
+      <button type="button" id="btnSino" class="sino vazio" aria-expanded="false" aria-controls="sinoPainel" aria-label="Alertas: nenhum"><svg class="ic" data-icon="sino" aria-hidden="true"></svg><span class="sino-n" id="sinoN" hidden></span></button>
+      <div class="sino-painel" id="sinoPainel" role="region" aria-label="Alertas" hidden></div>
+    </span>
     <button type="button" id="btnCompacto" aria-pressed="false">Compacto</button>
     <button type="button" id="btnCores" aria-haspopup="dialog">Ajustes</button>
     <button type="button" id="btnUnit" aria-label="Alternar unidade de temperatura">°C</button>
@@ -609,7 +627,8 @@ body.compact .kpi .kv{font-size:24px}
     board: '<rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="6" height="6" rx="1"/><path d="M16 7h2M16 11h2M7 17h4M15 17h3"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
     relogio: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    alerta: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/>'
+    alerta: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/>',
+    sino: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'
   };
   function icone(nome, cls) { return '<svg class="ic' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + ICON[nome] + '</svg>'; }
   document.querySelectorAll('svg[data-icon]').forEach(function (s) { s.setAttribute('viewBox', '0 0 24 24'); s.innerHTML = ICON[s.dataset.icon]; });
@@ -1888,13 +1907,47 @@ body.compact .kpi .kv{font-size:24px}
   setInterval(tickRegistro, 60000);
 
   // ---------- alertas ativos (o servidor da bandeja avalia; aqui só mostramos)
-  // Dispensar vale até a próxima abertura do painel; um alerta novo aparece mesmo assim.
+  // Todos ficam no sino do cabeçalho. Os do momento (temperatura, memória, reserva do SSD) também aparecem
+  // em faixa no topo; os crônicos (desgaste do SSD, idade do HD) ficam só no sino, para não aparecer a cada abertura.
+  // Dispensar uma faixa vale até a próxima abertura do painel; um alerta novo aparece mesmo assim.
   var avisosSig = '', avisosLista = [], dispensados = {};
+  function cronico(a) { return /^disco-(vida|idade)/.test(a.chave); }
+  function desdeTxt(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    var h = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    var hoje = new Date();
+    return d.toDateString() === hoje.toDateString() ? 'desde ' + h
+      : 'desde ' + String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + ' ' + h;
+  }
+  function desenharSino() {
+    var todos = avisosLista.slice().sort(function (a, b) { return cronico(a) - cronico(b); });
+    var urg = todos.filter(function (a) { return !cronico(a); }).length;
+    var n = $('sinoN'), btn = $('btnSino');
+    n.hidden = !todos.length;
+    n.textContent = todos.length;
+    n.classList.toggle('quente', urg > 0);
+    btn.classList.toggle('vazio', !todos.length);
+    btn.setAttribute('aria-label', todos.length ? 'Alertas: ' + todos.length + (urg ? ', ' + urg + ' urgente' + (urg > 1 ? 's' : '') : '') : 'Alertas: nenhum');
+    $('sinoPainel').innerHTML = todos.length ? todos.map(function (a) {
+      return '<div class="sino-item' + (cronico(a) ? '' : ' quente') + '">' + icone('alerta') +
+        '<div><strong>' + esc(a.titulo) + '</strong><span>' + esc(a.texto) + '</span>' +
+        (cronico(a) ? '' : '<small>' + esc(desdeTxt(a.desde)) + '</small>') + '</div></div>';
+    }).join('') : '<div class="nada">Nenhum alerta no momento.</div>';
+  }
+  function abrirSino(v) {
+    $('sinoPainel').hidden = !v;
+    $('btnSino').setAttribute('aria-expanded', String(v));
+  }
+  $('btnSino').addEventListener('click', function (e) { e.stopPropagation(); abrirSino($('sinoPainel').hidden); });
+  document.addEventListener('click', function (e) { if (!$('sinoPainel').hidden && !e.target.closest('.sino-box')) abrirSino(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('sinoPainel').hidden) { abrirSino(false); $('btnSino').focus(); } });
   function desenharAvisos() {
-    var lista = avisosLista.filter(function (a) { return !dispensados[a.chave]; });
-    var sig = JSON.stringify(lista);
+    var sig = JSON.stringify([avisosLista, dispensados]);
     if (sig === avisosSig) return;
     avisosSig = sig;
+    desenharSino();
+    var lista = avisosLista.filter(function (a) { return !cronico(a) && !dispensados[a.chave]; });
     var box = $('avisos');
     box.hidden = !lista.length;
     box.innerHTML = lista.map(function (a) {

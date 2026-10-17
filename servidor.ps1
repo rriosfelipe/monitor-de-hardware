@@ -825,7 +825,8 @@ function Avaliar([string]$chave, [bool]$cond, [int]$leituras, [double]$minEntre,
     $n = 1 + [int]$script:seguidas[$chave]
     $script:seguidas[$chave] = $n
     if ($n -lt $leituras) { return }
-    $script:ativos[$chave] = [ordered]@{ chave = $chave; nivel = $nivel; titulo = $titulo; texto = $texto }
+    $desde = if ($script:ativos[$chave]) { $script:ativos[$chave].desde } else { (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss') }
+    $script:ativos[$chave] = [ordered]@{ chave = $chave; nivel = $nivel; titulo = $titulo; texto = $texto; desde = $desde }
     $ultimo = $script:estado[$chave]
     $espera = if ($n -eq $leituras) { $minEntre } else { $minRepetir }
     if ($ultimo -and ((Get-Date) - $ultimo).TotalMinutes -lt $espera) { return }

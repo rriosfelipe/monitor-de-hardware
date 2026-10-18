@@ -38,6 +38,7 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
   | Monitor stalled | LibreHardwareMonitor not responding for 1 min |
 
   Several alerts at once are merged into a single notification. Every active alert is listed under the **bell** in the header, with a counter (red when any is urgent). Alerts about the current moment (temperature, memory, SSD spare area, missing readings) also appear as banners that can be dismissed until the next time you open the dashboard; long-term ones (SSD wear, HDD age) stay in the bell only.
+- **Drive health trends.** Each SSD card shows its wear rate (life lost per month over recent months, the average over the whole history and the estimated time left until 10 %), and each HDD shows its reallocated, pending and unreadable sectors. The monitor warns when an SSD's wear speeds up or its time left gets short, and when an HDD gains bad sectors. It uses the per-drive history kept by CrystalDiskInfo and a daily snapshot written to `registros/saude-discos.csv`; HDD sector counts require the CrystalDiskInfo SMART reading (`instalar-smart.ps1`).
 - **Disk health.** For each drive: its letter (C:, D:…), type (HDD, SSD or NVMe), remaining life, power-on time, and a highlighted note when action is needed.
 - **Enable/disable external HDDs.** Puts a USB drive *offline* in Windows, or back online, with one click. That stops all access to it without unplugging. Before disabling, it warns about programs using the drive and **qBittorrent torrents** saved on it, then flushes pending writes. The Windows administrator prompt is required.
 - **30-day log** (collapsible section, with a one-line period summary when closed). One line per minute (average and peak) in daily CSV files that open directly in Excel. The dashboard shows 24-hour, 7-day and 30-day charts, peak values with date and time, and the energy used by CPU and GPU.
@@ -138,6 +139,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `janela.json` | Last size and position of the dashboard window, reapplied when it opens |
 | `registros/` | Daily CSV logs: `YYYY-MM-DD.csv` and `discos-YYYY-MM-DD.csv`. They use `;` as separator and a decimal comma (Brazilian Excel format), about 0.8 MB per day. |
 | `registros/sessoes/` | Sessions recorded with the GPU card's "Gravar" button: one CSV per session (one line per second) plus a JSON summary |
+| `registros/saude-discos.csv` | Daily snapshot of each drive's health (life, sectors, hours). Not removed with the 30-day logs |
 
 ### HTTP endpoints (localhost only)
 
@@ -152,6 +154,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `GET /memoria` | Configured RAM speed, as reported by Windows |
 | `GET /smart` | SMART read by CrystalDiskInfo, per disk number |
 | `GET /gpus` | Graphics cards and their real VRAM size |
+| `GET /saude` | Health trend of each drive: SSD wear rate and HDD sector counts |
 | `GET/POST /sessao` | Session recording state and last summary; starts or stops a recording |
 | `POST /abrir-sessoes` | Opens the recorded sessions folder in Explorer |
 | `GET /nvidia` | NVIDIA cards from the driver: clocks, power state, PCIe link and power limit |

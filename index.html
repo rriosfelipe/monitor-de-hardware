@@ -194,6 +194,8 @@ details.hw[open] summary .chev{transform:rotate(90deg)}
 .aviso .x{flex-shrink:0;min-height:36px;min-width:36px;padding:0;margin:-6px -8px -6px 0;border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;border-radius:8px}
 .aviso .x:hover{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--text)}
 .avisos-acoes{display:flex;justify-content:flex-end}
+.tend{font:12px/1.45 var(--mono);color:var(--muted)}
+.tend.warm{color:var(--warm)}.tend.hot{color:var(--hot)}
 .sessao{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px}
 .sessao-cab{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .sessao-st{font-size:13px;color:var(--muted);margin-top:2px;line-height:1.45}
@@ -1283,6 +1285,7 @@ body.compact .kpi .kv{font-size:24px}
         '<div class="badges">' + badges.join('') + '</div>' +
         (used && !off ? '<div class="track"><div style="width:' + used.value.toFixed(1) + '%;background:var(--muted)"></div></div>' : '') +
         '<div class="row mono" style="font-size:12px;color:var(--muted)"><span>' + (off ? 'sem acesso aos arquivos (desativado)' : used ? fmt(used.value) + '% ocupado' : lt ? 'espaço ocupado não informado' : 'sem volume montado') + '</span>' + (off ? '' : '<span>L ' + fmt(toMBs(r), 1) + ' · G ' + fmt(toMBs(w), 1) + ' MB/s</span>') + '</div>' +
+        linhaSaude(saude[numDisco(d.hid)]) +
         notas.map(function (n) { return '<div class="nota ' + n[0] + '">' + esc(n[1]) + '</div>'; }).join('') +
         '</div>';
     }).join('') : '<div class="empty">Nenhum disco reportado.</div>';
@@ -1994,7 +1997,7 @@ body.compact .kpi .kv{font-size:24px}
   // em faixa no topo; os crônicos (desgaste do SSD, idade do HD) ficam só no sino, para não aparecer a cada abertura.
   // Dispensar uma faixa vale até a próxima abertura do painel; um alerta novo aparece mesmo assim.
   var avisosSig = '', avisosLista = [], dispensados = {};
-  function cronico(a) { return /^disco-(vida|idade)/.test(a.chave); }
+  function cronico(a) { return /^disco-(vida|idade)/.test(a.chave) || (/^disco-desgaste/.test(a.chave) && a.nivel !== 'quente'); }
   function desdeTxt(iso) {
     var d = new Date(iso);
     if (isNaN(d)) return '';
@@ -2062,6 +2065,40 @@ body.compact .kpi .kv{font-size:24px}
   setInterval(tickSmart, 60000);
   tickMemoria();
   setInterval(tickMemoria, 10000);
+  // ---------- tendência de saúde dos discos (o servidor calcula a cada 10 min)
+  var saude = {};
+  var MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  function mesAno(iso) { var p = String(iso || '').split('-'); return p.length < 2 ? '' : MESES[+p[1] - 1] + '/' + p[0]; }
+  function prazo(m) { return m < 12 ? Math.max(1, Math.round(m)) + ' meses' : fmt(m / 12, 1) + ' anos'; }
+  function linhaSaude(s) {
+    if (!s) return '';
+    var h = '';
+    if (s.ritmo != null) {
+      var acel = s.ritmoLongo != null && s.ritmo >= 1 && s.ritmo >= 2 * s.ritmoLongo;
+      var cls = s.mesesAte10 != null && s.mesesAte10 < 6 ? 'hot' : (s.mesesAte10 != null && s.mesesAte10 < 18) || acel ? 'warm' : '';
+      var txt = 'Desgaste: ' + fmt(s.ritmo, 1) + ' %/mês nos últimos ' + s.diasRitmo + ' dias';
+      if (s.ritmoLongo != null) txt += ' (média desde ' + mesAno(s.desde) + ': ' + fmt(s.ritmoLongo, 1) + ')';
+      if (s.mesesAte10 != null) txt += ' · ~' + prazo(s.mesesAte10) + ' até 10 %';
+      h += '<div class="tend ' + cls + '" title="Calculado com o histórico do CrystalDiskInfo e o registro diário do monitor">' + esc(txt) + '</div>';
+    }
+    if (s.realocados != null) {
+      var cresceu = s.realocadosAntes != null && s.realocados > s.realocadosAntes;
+      var ruim = s.pendentes > 0 || s.incorrigiveis > 0 || cresceu;
+      var t2 = 'Setores: ' + s.realocados + ' realocados · ' + (s.pendentes || 0) + ' pendentes · ' + (s.incorrigiveis || 0) + ' ilegíveis';
+      if (cresceu) t2 += ' (+' + (s.realocados - s.realocadosAntes) + ' em 30 dias)';
+      h += '<div class="tend ' + (ruim ? 'hot' : s.realocados > 0 ? 'warm' : '') + '" title="Lido pelo CrystalDiskInfo em ' + esc(s.setoresHora || '') + '">' + esc(t2) + '</div>';
+    }
+    return h;
+  }
+  function tickSaude() {
+    fetch('/saude', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
+      if (JSON.stringify(j) === JSON.stringify(saude)) return;
+      saude = j || {};
+      if (last) render(last, true);
+    }).catch(function () {});
+  }
+  tickSaude();
+  setInterval(tickSaude, 300000);
   function tickGpus() {
     fetch('/gpus', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (l) {
       var novo = {};

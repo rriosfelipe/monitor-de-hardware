@@ -36,6 +36,7 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
   | Monitor sem leituras | LibreHardwareMonitor parado por 1 min | 1 h |
 
   Vários alertas ao mesmo tempo viram uma notificação só, e clicar nela abre o painel. Todos os alertas ativos ficam no **sino** do cabeçalho, com um contador (vermelho quando há algum urgente) e a lista ao clicar. Os do momento (temperatura, memória, reserva do SSD, leituras paradas) também aparecem em faixa no topo do painel e podem ser dispensados até a próxima abertura; os crônicos (desgaste do SSD, idade do HD) ficam só no sino.
+- **Tendência de saúde dos discos.** Cada cartão de SSD mostra o ritmo de desgaste (% de vida perdida por mês nos últimos meses, a média de todo o histórico e o prazo estimado até 10 %), e cada HD mostra os setores realocados, pendentes e ilegíveis. O monitor avisa quando o desgaste de um SSD acelera ou o prazo fica curto, e quando um HD ganha setores com defeito. Usa o histórico que o CrystalDiskInfo guarda por disco e um retrato diário gravado em `registros/saude-discos.csv`; os setores dos HDs exigem a leitura SMART pelo CrystalDiskInfo (`instalar-smart.ps1`).
 - **Saúde dos discos.** Para cada disco: letra da unidade (C:, D:…), tipo (HD, SSD ou NVMe), vida útil restante, tempo ligado e uma nota em destaque quando há algo a fazer.
 - **Desativar e ativar HDs externos.** Coloca um disco USB *offline* no Windows, ou de volta online, com um clique. O Windows para de acessá-lo sem precisar desconectar o cabo, e **nada é apagado**. Antes de desativar, o painel avisa sobre programas usando o disco e **torrents do qBittorrent** salvos nele, e grava o que estiver pendente. Exige a confirmação de administrador do Windows.
 - **Registro de 30 dias** (seção recolhível, com resumo do período quando fechada). Uma linha por minuto (média e pico) em arquivos CSV diários, que abrem direto no Excel. O painel mostra gráficos de 24 horas, 7 dias e 30 dias, os picos do período com dia e hora, e a energia gasta por CPU e GPU.
@@ -136,6 +137,7 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `janela.json` | Último tamanho e posição da janela do painel, reaplicados quando ela abre. |
 | `registros/` | Registros diários: `AAAA-MM-DD.csv` (CPU, GPU, uso, potência, RAM) e `discos-AAAA-MM-DD.csv` (temperatura de cada disco e de cada GPU). Separador `;` e vírgula decimal, como no Excel brasileiro. Cerca de 0,8 MB por dia; os arquivos com mais de 30 dias são apagados sozinhos. |
 | `registros/sessoes/` | Sessões gravadas pelo botão "Gravar" do cartão da GPU: um CSV por sessão (uma linha por segundo) e um JSON com o resumo. |
+| `registros/saude-discos.csv` | Retrato diário da saúde de cada disco (vida, setores, horas). Não é apagado com os registros de 30 dias. |
 
 ### Endereços HTTP (só no localhost)
 
@@ -150,6 +152,7 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `GET /memoria` | Velocidade configurada da RAM, informada pelo Windows |
 | `GET /smart` | SMART lido pelo CrystalDiskInfo, por número de disco |
 | `GET /gpus` | Placas de vídeo e o tamanho real da VRAM de cada uma |
+| `GET /saude` | Tendência de saúde de cada disco: ritmo de desgaste dos SSDs e setores dos HDs |
 | `GET/POST /sessao` | Estado da gravação de sessão e resumo da última; inicia ou para a gravação |
 | `POST /abrir-sessoes` | Abre a pasta das sessões gravadas no Explorador |
 | `GET /nvidia` | Placas NVIDIA pelo driver: clocks, estado de energia, ligação PCIe e limite de potência |

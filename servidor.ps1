@@ -276,6 +276,9 @@ function Atender($ctx) {
                 Start-Process explorer.exe $pastaSessoes
                 Responder $res 200 'text/plain; charset=utf-8' ($utf8.GetBytes('ok'))
             }
+            '/saude' {
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((Json-Saude)))
+            }
             '/abrir-registros' {
                 # Só o próprio painel: POST da mesma origem.
                 if ($ctx.Request.HttpMethod -ne 'POST' -or $ctx.Request.Headers['Origin'] -ne "http://localhost:$Porta") {
@@ -413,24 +416,42 @@ $NaN = [double]::NaN
 # devolve zerado (disco atrás do Intel RST VMD). Só vale enquanto o relatório for recente.
 $script:smart = @{}
 $script:smartChave = ''
+$script:smartAta = @{}   # disco -> setores lidos do relatório (SATA e USB)
 function Ler-Smart {
-    if (-not (Test-Path -LiteralPath $RelatorioSmart)) { return @{} }
+    if (-not (Test-Path -LiteralPath $RelatorioSmart)) { $script:smartAta = @{}; return @{} }
     $hora = (Get-Item -LiteralPath $RelatorioSmart).LastWriteTime
-    if (((Get-Date) - $hora).TotalMinutes -gt 30) { return @{} }
+    if (((Get-Date) - $hora).TotalMinutes -gt 30) { $script:smartAta = @{}; return @{} }
     $chave = "$($hora.Ticks)|$($script:letrasJson)"
     if ($chave -eq $script:smartChave) { return $script:smart }
     try { $linhas = [System.IO.File]::ReadAllLines($RelatorioSmart) } catch { return $script:smart }
-    $novo = @{}
-    $nvme = $false; $n = $null; $d = $null
+    $novo = @{}; $ata = @{}
+    $nvme = $false; $n = $null; $d = $null; $a = $null; $modelo = ''; $serie = ''
     foreach ($l in $linhas) {
-        if ($l -match '^\s*Model : ') { $nvme = $false; $n = $null; $d = $null; continue }
+        $m = [regex]::Match($l, '^\s*Model : (.+)$')
+        if ($m.Success) { $nvme = $false; $n = $null; $d = $null; $a = $null; $modelo = $m.Groups[1].Value.Trim(); $serie = ''; continue }
+        $m = [regex]::Match($l, '^\s*Serial Number : (.+)$')
+        if ($m.Success) { $serie = $m.Groups[1].Value.Trim(); continue }
         if ($l -match '^\s*Interface : NVM Express') { $nvme = $true; continue }
         $m = [regex]::Match($l, '^\s*Drive Letter : ([A-Za-z]:)')
-        if ($m.Success -and $nvme) {
+        if ($m.Success) {
             $n = $script:letrasMapa.Keys | Where-Object { ($script:letrasMapa[$_] -split ' ') -contains $m.Groups[1].Value.ToUpper() } | Select-Object -First 1
-            if ($null -ne $n) {
+            if ($null -ne $n -and $nvme) {
                 $d = @{ temp = $NaN; vida = $NaN; reserva = $NaN; reservaMin = $NaN; horas = $NaN; hora = $hora.ToString('HH:mm') }
                 $novo[[string]$n] = $d
+            } elseif ($null -ne $n) {
+                $a = @{ modelo = $modelo; serie = $serie; realocados = $null; pendentes = $null; incorrigiveis = $null; hora = $hora.ToString('yyyy-MM-dd HH:mm') }
+                $ata[[string]$n] = $a
+            }
+            continue
+        }
+        # Atributos SMART de discos SATA: ID, atual, pior, limite e valor bruto (6 bytes em hexadecimal).
+        $m = [regex]::Match($l, '^([0-9A-F]{2}) [_0-9]{3} [_0-9]{3} [_0-9]{3} ([0-9A-F]{12}) ')
+        if ($m.Success -and $a) {
+            $v = [Convert]::ToInt64($m.Groups[2].Value, 16) % 4294967296   # contagem nos 4 bytes de baixo
+            switch ($m.Groups[1].Value) {
+                '05' { $a.realocados = $v }
+                'C5' { $a.pendentes = $v }
+                'C6' { $a.incorrigiveis = $v }
             }
             continue
         }
@@ -448,6 +469,7 @@ function Ler-Smart {
         }
     }
     $script:smart = $novo
+    $script:smartAta = $ata
     $script:smartChave = $chave
     return $novo
 }
@@ -502,7 +524,7 @@ function Ler-Resumo {
                 $hw = $md.Groups[1].Value
                 $d = $r.discos[$hw]
                 if (-not $d) {
-                    $d = @{ nome = $nomesHw[$hw]; hdd = ($md.Groups[2].Value -eq 'hdd'); temp = $NaN; aviso = $NaN; vida = $NaN; reserva = $NaN; reservaMin = $NaN; horas = $NaN }
+                    $d = @{ nome = $nomesHw[$hw]; hdd = ($md.Groups[2].Value -eq 'hdd'); temp = $NaN; aviso = $NaN; vida = $NaN; reserva = $NaN; reservaMin = $NaN; horas = $NaN; ocupado = $NaN }
                     if (-not $d.nome) { $d.nome = $hw }
                     $r.discos[$hw] = $d
                 }
@@ -515,6 +537,7 @@ function Ler-Resumo {
                     'Available Spare' { $d.reserva = Numero $valor }
                     'Available Spare Threshold' { $d.reservaMin = Numero $valor }
                     'Power On Hours' { $d.horas = Numero $valor }
+                    'Used Space' { $d.ocupado = Numero $valor }
                 }
             }
         }
@@ -736,7 +759,7 @@ function Letras-Tick {
             $m[$k] += "$($x.DriveLetter):"
         }
         $discos = @(Get-Disk -ErrorAction SilentlyContinue | ForEach-Object {
-            [ordered]@{ n = [int]$_.Number; nome = ($_.FriendlyName -replace '\s+', ' ').Trim(); usb = ($_.BusType -eq 'USB')
+            [ordered]@{ n = [int]$_.Number; nome = ($_.FriendlyName -replace '\s+', ' ').Trim(); usb = ($_.BusType -eq 'USB'); serie = ([string]$_.SerialNumber).Trim()
                         offline = [bool]$_.IsOffline; sistema = ([bool]$_.IsSystem -or [bool]$_.IsBoot) }
         })
         $pag = @(Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue | ForEach-Object { $_.Name.Substring(0, 2).ToUpper() })
@@ -904,6 +927,7 @@ function Verificar-Alertas($r) {
     $pctVirt = if ($limVirt -gt 0) { $r.virtUsada / $limVirt * 100 } else { $NaN }
     Avaliar 'memoria' (Acima 'memoria' $pctVirt 90) 15 30 60 'quente' `
         "Memória quase no limite ($(Fmt $pctVirt) %)" "$(Fmt $r.virtUsada 1) de $(Fmt $limVirt 0) GB confirmados. Feche programas para evitar travamentos."
+    try { Saude-Atualizar $r } catch { }
     foreach ($hw in $r.discos.Keys) {
         $d = $r.discos[$hw]
         # NVMe informa o próprio limite de aviso; nos demais vale o limite configurado.
@@ -918,10 +942,147 @@ function Verificar-Alertas($r) {
             "SSD $lt$($d.nome): $(Fmt $d.vida) % de vida útil" "O desgaste está avançado. Mantenha backup do que estiver nele e planeje a troca."
         Avaliar "disco-reserva$hw" (-not $semSmart -and -not [double]::IsNaN($d.reserva) -and -not [double]::IsNaN($d.reservaMin) -and $d.reserva -le $d.reservaMin) 1 1440 1440 'quente' `
             "SSD $lt$($d.nome): reserva esgotada" "A área reserva ($(Fmt $d.reserva) %) chegou ao mínimo do fabricante. Faça backup agora."
+        $t = $script:saude[($hw -replace '^.*/', '')]
+        $acel = $t -and $null -ne $t.ritmo -and $null -ne $t.ritmoLongo -and $t.ritmo -ge 1 -and $t.ritmo -ge 2 * $t.ritmoLongo
+        $perto = $t -and $null -ne $t.mesesAte10 -and $t.mesesAte10 -lt 18
+        if ($acel -or $perto) {
+            $titulo = if ($perto) { "SSD $lt$($d.nome): fim da vida útil em ~$(Prazo $t.mesesAte10)" } else { "SSD $lt$($d.nome): o desgaste acelerou" }
+            $texto = "Perdeu $(Fmt $t.ritmo 1) % de vida por mês nos últimos $($t.diasRitmo) dias"
+            if ($null -ne $t.ritmoLongo) { $texto += " (média desde $(([datetime]$t.desde).ToString('MM/yyyy')): $(Fmt $t.ritmoLongo 1) % por mês)" }
+            if ($null -ne $t.mesesAte10) { $texto += ". Nesse ritmo chega a 10 % em cerca de $(Prazo $t.mesesAte10)" }
+            $texto += '.'
+            if ($null -ne $t.ocupado -and $t.ocupado -ge 85) { $texto += " Está $($t.ocupado) % cheio: SSD quase cheio se desgasta mais rápido, deixe pelo menos 15 % livres." }
+            $texto += ' Mantenha backup do que estiver nele.'
+        } else { $titulo = ''; $texto = '' }
+        Avaliar "disco-desgaste$hw" ($acel -or $perto) 1 $semana $semana $(if ($perto -and $t.mesesAte10 -lt 6) { 'quente' } else { 'morno' }) $titulo $texto
+        $ilegiveis = $t -and (($null -ne $t.pendentes -and $t.pendentes -gt 0) -or ($null -ne $t.incorrigiveis -and $t.incorrigiveis -gt 0))
+        $cresceu = $t -and $null -ne $t.realocadosAntes -and $null -ne $t.realocados -and $t.realocados -gt $t.realocadosAntes
+        if ($ilegiveis -or $cresceu) {
+            $titulo = "Disco $lt$($d.nome): setores com defeito"
+            $texto = if ($ilegiveis) { "Há setores que o disco não consegue ler ($($t.pendentes) pendentes, $($t.incorrigiveis) ilegíveis). Copie agora os dados importantes dele." }
+                     else { "Os setores realocados subiram de $($t.realocadosAntes) para $($t.realocados) em 30 dias: a superfície está se degradando. Faça backup e planeje a troca." }
+        } else { $titulo = ''; $texto = '' }
+        Avaliar "disco-setores$hw" ($ilegiveis -or $cresceu) 1 1440 1440 'quente' $titulo $texto
         Avaliar "disco-idade$hw" ($d.hdd -and $d.horas -ge 40000) 1 $semana $semana 'morno' `
             "HD $lt$($d.nome): $(Fmt ($d.horas / 8760) 1) anos ligado" "$(Fmt $d.horas) horas de uso. HDs nessa idade falham com mais frequência: mantenha backup do que estiver nele."
     }
 }
+# ---- Tendência de saúde dos discos ----
+# Fontes: o histórico que o CrystalDiskInfo guarda por disco (pasta Smart, modelo + número de série), o relatório
+# DiskInfo.txt (setores dos HDs) e um retrato diário gravado pelo monitor em registros\saude-discos.csv
+# (fora da limpeza de 30 dias). Recalcula a cada 10 minutos.
+$pastaCdiSmart = Join-Path (Split-Path -Parent $RelatorioSmart) 'Smart'
+$arquivoSaude = Join-Path $pastaRegistros 'saude-discos.csv'
+$script:saude = @{}
+$script:saudeHora = [datetime]::MinValue
+$script:saudeDia = @{}
+$inv = [System.Globalization.CultureInfo]::InvariantCulture
+function Serie-Cdi([string]$arq) {
+    $l = New-Object System.Collections.Generic.List[object]
+    if (-not $arq -or -not (Test-Path -LiteralPath $arq)) { return ,$l }
+    foreach ($x in [System.IO.File]::ReadAllLines($arq)) {
+        $c = $x -split ','
+        $d = [datetime]::MinValue; $v = 0.0
+        if ($c.Count -ge 2 -and [datetime]::TryParseExact($c[0].Trim(), 'yyyy/MM/dd HH:mm:ss', $inv, 'None', [ref]$d) -and
+            [double]::TryParse($c[1].Trim(), [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $l.Add(@($d, $v)) }
+    }
+    return ,$l
+}
+function Normalizar([string]$s) { return ($s -replace '[\s\._\-]', '').ToUpper() }
+function Pasta-Cdi([string]$modelo, [string]$serie) {
+    if (-not $serie -or -not (Test-Path -LiteralPath $pastaCdiSmart)) { return $null }
+    $alvo = Normalizar ($modelo + $serie); $so = Normalizar $serie
+    $dirs = @(Get-ChildItem -LiteralPath $pastaCdiSmart -Directory -ErrorAction SilentlyContinue)
+    foreach ($p in $dirs) { if ((Normalizar $p.Name) -eq $alvo) { return $p.FullName } }
+    if ($so.Length -ge 8) { foreach ($p in $dirs) { if ((Normalizar $p.Name).EndsWith($so)) { return $p.FullName } } }
+    return $null
+}
+function Saude-Atualizar($r) {
+    if (((Get-Date) - $script:saudeHora).TotalMinutes -lt 10) { return }
+    $script:saudeHora = Get-Date
+    [void](Ler-Smart)
+    $agora = Get-Date; $hoje = $agora.ToString('yyyy-MM-dd')
+    # retratos diários já gravados: "modelo|série" -> linhas
+    $proprio = @{}
+    if (Test-Path -LiteralPath $arquivoSaude) {
+        foreach ($x in @([System.IO.File]::ReadAllLines($arquivoSaude) | Select-Object -Skip 1)) {
+            $c = $x -split ';'
+            if ($c.Count -lt 9) { continue }
+            $k = $c[2] + '|' + $c[3]
+            if (-not $proprio.ContainsKey($k)) { $proprio[$k] = New-Object System.Collections.Generic.List[object] }
+            $proprio[$k].Add($c)
+        }
+    }
+    $novo = @{}; $linhas = New-Object System.Collections.Generic.List[string]
+    foreach ($hw in $r.discos.Keys) {
+        $m = [regex]::Match([string]$hw, '/(\d+)$')
+        if (-not $m.Success) { continue }
+        $n = $m.Groups[1].Value
+        $d = $r.discos[$hw]
+        $est = @($script:discosEstado | Where-Object { [string]$_.n -eq $n })[0]
+        $serie = if ($est -and $est.serie) { [string]$est.serie } else { '' }
+        $ata = $script:smartAta[$n]
+        $pasta = $null
+        if ($ata -and $ata.serie) { $pasta = Pasta-Cdi $ata.modelo $ata.serie }
+        if (-not $pasta) { $pasta = Pasta-Cdi $d.nome $serie }
+        $chave = [string]$d.nome + '|' + $serie
+        $semSmart = $d.temp -eq 0 -and $d.horas -eq 0
+        $vida = if ($semSmart) { $NaN } else { [double]$d.vida }
+        $t = [ordered]@{ n = $n }
+        if ($pasta) { $t.historico = Split-Path -Leaf $pasta }
+        # SSD: ritmo de desgaste (pontos de até 120 dias atrás) e média de todo o histórico
+        if (-not [double]::IsNaN($vida)) {
+            $pts = New-Object System.Collections.Generic.List[object]
+            if ($pasta) { foreach ($p in (Serie-Cdi (Join-Path $pasta 'Life.csv'))) { $pts.Add($p) } }
+            if ($proprio.ContainsKey($chave)) {
+                foreach ($c in $proprio[$chave]) { $v = 0.0; if ([double]::TryParse($c[4], [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $pts.Add(@([datetime]::ParseExact($c[0], 'yyyy-MM-dd', $inv), $v)) } }
+            }
+            $pts.Add(@($agora, $vida))
+            $ord = @($pts | Sort-Object { $_[0] })
+            $ini = @($ord | Where-Object { ($agora - $_[0]).TotalDays -le 120 })[0]
+            $dias = ($agora - $ini[0]).TotalDays
+            if ($dias -ge 20 -and $ini[1] -gt $vida) { $t.ritmo = [math]::Round(($ini[1] - $vida) / $dias * 30, 2); $t.diasRitmo = [int]$dias }
+            $prim = $ord[0]; $diasL = ($agora - $prim[0]).TotalDays
+            if ($diasL -ge 60 -and $prim[1] -gt $vida) { $t.ritmoLongo = [math]::Round(($prim[1] - $vida) / $diasL * 30, 2); $t.desde = $prim[0].ToString('yyyy-MM-dd'); $t.vidaInicial = $prim[1] }
+            if ($null -ne $t.ritmo -and $t.ritmo -gt 0.05) { $t.mesesAte10 = [math]::Round([math]::Max(0, $vida - 10) / $t.ritmo, 1) }
+            $t.vida = $vida
+            if (-not [double]::IsNaN($d.ocupado)) { $t.ocupado = [math]::Round($d.ocupado) }
+        }
+        # HD: setores realocados, pendentes e ilegíveis, e quanto os realocados cresceram em 30 dias
+        if ($ata -and $null -ne $ata.realocados) {
+            $t.realocados = $ata.realocados; $t.pendentes = $ata.pendentes; $t.incorrigiveis = $ata.incorrigiveis; $t.setoresHora = $ata.hora
+            $hist = New-Object System.Collections.Generic.List[object]
+            if ($pasta) { foreach ($p in (Serie-Cdi (Join-Path $pasta 'ReallocatedSectorsCount.csv'))) { $hist.Add($p) } }
+            if ($proprio.ContainsKey($chave)) {
+                foreach ($c in $proprio[$chave]) { $v = 0.0; if ([double]::TryParse($c[5], [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $hist.Add(@([datetime]::ParseExact($c[0], 'yyyy-MM-dd', $inv), $v)) } }
+            }
+            $antes = @($hist | Where-Object { ($agora - $_[0]).TotalDays -ge 30 } | Sort-Object { $_[0] })
+            if ($antes.Count) { $t.realocadosAntes = $antes[-1][1] }
+        }
+        $novo[$n] = $t
+        # retrato do dia (um por disco)
+        $jaTem = $proprio.ContainsKey($chave) -and $proprio[$chave][$proprio[$chave].Count - 1][0] -eq $hoje
+        if ($script:saudeDia[$chave] -ne $hoje -and -not $jaTem -and (-not [double]::IsNaN($vida) -or $null -ne $t.realocados)) {
+            $fv = if ([double]::IsNaN($vida)) { '' } else { $vida.ToString('0', $inv) }
+            $fh = if ([double]::IsNaN($d.horas)) { '' } else { ([double]$d.horas).ToString('0', $inv) }
+            $linhas.Add((@($hoje, $n, $d.nome, $serie, $fv, $t.realocados, $t.pendentes, $t.incorrigiveis, $fh) -join ';'))
+        }
+        $script:saudeDia[$chave] = $hoje
+    }
+    if ($linhas.Count) {
+        try {
+            if (-not (Test-Path -LiteralPath $arquivoSaude)) { [System.IO.File]::WriteAllText($arquivoSaude, "data;disco;modelo;serie;vida_pct;realocados;pendentes;ilegiveis;horas`r`n", $utf8) }
+            [System.IO.File]::AppendAllText($arquivoSaude, (($linhas -join "`r`n") + "`r`n"), $utf8)
+        } catch { }
+    }
+    $script:saude = $novo
+}
+function Json-Saude {
+    if (-not $script:saude.Count) { return '{}' }
+    return ConvertTo-Json -InputObject $script:saude -Compress -Depth 3
+}
+function Prazo([double]$meses) { if ($meses -lt 12) { return "$([math]::Max(1, [math]::Round($meses))) meses" } return "$(Fmt ($meses / 12) 1) anos" }
+
 function Json-Alertas {
     if (-not $script:ativos.Count) { return '[]' }
     return ConvertTo-Json -InputObject @($script:ativos.Values) -Compress

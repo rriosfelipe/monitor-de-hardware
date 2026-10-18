@@ -999,6 +999,8 @@ function Pasta-Cdi([string]$modelo, [string]$serie) {
 }
 function Saude-Atualizar($r) {
     if (((Get-Date) - $script:saudeHora).TotalMinutes -lt 10) { return }
+    # espera a primeira consulta dos discos (números de série), senão o retrato sai sem a chave certa
+    if (-not @($script:discosEstado).Count) { return }
     $script:saudeHora = Get-Date
     [void](Ler-Smart)
     $agora = Get-Date; $hoje = $agora.ToString('yyyy-MM-dd')

@@ -41,6 +41,9 @@ $arquivoConfig = Join-Path $raiz 'config.json'
 # Redimensionar a janela do painel no modo compacto (Janela.cs).
 $script:janelaOk = $false
 try { Add-Type -Path (Join-Path $raiz 'Janela.cs'); $script:janelaOk = $true } catch { }
+# Plano de energia ativo (Energia.cs).
+$script:energiaOk = $false
+try { Add-Type -Path (Join-Path $raiz 'Energia.cs'); $script:energiaOk = $true } catch { }
 
 # Registro de longo prazo (Registro.cs): uma linha por minuto em registros\AAAA-MM-DD.csv, guardada por 30 dias.
 $pastaRegistros = Join-Path $raiz 'registros'
@@ -275,6 +278,22 @@ function Atender($ctx) {
                 if (-not (Test-Path -LiteralPath $pastaSessoes)) { [void](New-Item -ItemType Directory -Path $pastaSessoes) }
                 Start-Process explorer.exe $pastaSessoes
                 Responder $res 200 'text/plain; charset=utf-8' ($utf8.GetBytes('ok'))
+            }
+            '/energia' {
+                $req = $ctx.Request
+                if ($req.HttpMethod -eq 'POST') {
+                    # Só o próprio painel: volta ao plano Equilibrado (não precisa de administrador).
+                    if ($req.Headers['Origin'] -ne "http://localhost:$Porta") {
+                        Responder $res 403 'text/plain; charset=utf-8' ($utf8.GetBytes('Recusado'))
+                        return
+                    }
+                    try { & powercfg.exe /setactive SCHEME_BALANCED | Out-Null; $r = 'ok' } catch { $r = 'erro' }
+                    $script:planoHora = [datetime]::MinValue
+                    Energia-Tick
+                    Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject @{ resultado = $r } -Compress)))
+                    return
+                }
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((Json-Energia)))
             }
             '/saude' {
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((Json-Saude)))
@@ -931,6 +950,14 @@ function Verificar-Alertas($r) {
     }
     $limVirt = $r.virtUsada + $r.virtLivre
     $pctVirt = if ($limVirt -gt 0) { $r.virtUsada / $limVirt * 100 } else { $NaN }
+    $pl = $script:plano
+    $altoPlano = [bool]($pl -and $pl.alto)
+    if ($altoPlano) {
+        $txt = 'Mantém todos os núcleos do processador em clock e tensão altos mesmo com pouco uso, e ele esquenta.'
+        if ($pl.trocadoEm) { $txt += " Trocado em $(([datetime]$pl.trocadoEm).ToString('dd/MM')) às $(([datetime]$pl.trocadoEm).ToString('HH:mm')) por $($pl.por)." }
+        $txt += ' Para voltar: botão "Usar Equilibrado" no cartão do processador.'
+    } else { $txt = '' }
+    Avaliar 'energia-plano' $altoPlano 1 60 100000 'morno' "Plano de energia: $($pl.nome)" $txt
     Avaliar 'memoria' (Acima 'memoria' $pctVirt 90) 15 60 360 'quente' `
         "Memória quase no limite ($(Fmt $pctVirt) %)" "$(Fmt $r.virtUsada 1) de $(Fmt $limVirt 0) GB confirmados. Feche programas para evitar travamentos."
     try { Saude-Atualizar $r } catch { }
@@ -1324,9 +1351,38 @@ $timerSessao = New-Object System.Windows.Forms.Timer
 $timerSessao.Interval = 1000
 $timerSessao.Add_Tick({ Sessao-Tick })
 
+# ---- Vigia do plano de energia: "Desempenho Máximo" e "Alto desempenho" mantêm todos os núcleos em clock e
+# tensão altos mesmo com pouco uso, e o processador esquenta. Confere a cada 5 s; quando muda, descobre no
+# registro do Windows quando e por qual programa foi trocado.
+$script:plano = $null
+$script:planoHora = [datetime]::MinValue
+$planosAltos = @('8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c', 'e9a42b02-d5df-448d-aa00-03f14749eb61')
+function Plano-Alto([string]$guid, [string]$nome) { return ($planosAltos -contains $guid) -or ($nome -match 'Desempenho M[aá]ximo|Alto desempenho|High performance|Ultimate Performance') }
+function Energia-Tick {
+    if (-not $script:energiaOk -or ((Get-Date) - $script:planoHora).TotalSeconds -lt 5) { return }
+    $script:planoHora = Get-Date
+    try { $x = [MonitorHW.Energia]::PlanoAtivo() } catch { return }
+    if (-not $x) { return }
+    $guid, $nome = $x -split '\|', 2
+    if ($script:plano -and $script:plano.guid -eq $guid) { return }
+    $p = [ordered]@{ guid = $guid; nome = $nome; alto = (Plano-Alto $guid $nome) }
+    try {
+        $ev = Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-UserModePowerService'; Id = 12 } -MaxEvents 1 -ErrorAction Stop
+        if ([string]$ev.Properties[3].Value -eq $guid) {
+            $p.trocadoEm = $ev.TimeCreated.ToString('s')
+            $p.por = Split-Path -Leaf ([string]$ev.Properties[0].Value)
+        }
+    } catch { }
+    $script:plano = $p
+}
+function Json-Energia {
+    if (-not $script:plano) { return '{}' }
+    return ConvertTo-Json -InputObject $script:plano -Compress
+}
+
 $timerLetras = New-Object System.Windows.Forms.Timer
 $timerLetras.Interval = 1500
-$timerLetras.Add_Tick({ Acao-Tick; Letras-Tick; Nvidia-Tick; Janela-Tick })
+$timerLetras.Add_Tick({ Acao-Tick; Letras-Tick; Nvidia-Tick; Janela-Tick; Energia-Tick })
 
 $contexto = New-Object System.Windows.Forms.ApplicationContext
 $itemSair.Add_Click({

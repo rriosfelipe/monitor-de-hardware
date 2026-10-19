@@ -424,6 +424,7 @@ body.compact .kpi .kv{font-size:24px}
       </div>
     </div>
     <div class="chart" data-chart="cpu"></div>
+    <div class="row" id="cpuPlanoRow" style="font-size:12px;align-items:center" hidden><span class="k">Plano de energia</span><span style="display:flex;align-items:center;gap:10px"><span class="mono" id="cpuPlano">—</span><button type="button" id="btnPlano" hidden style="min-height:32px;font-size:13px;padding:0 12px">Usar Equilibrado</button></span></div>
     <details class="fold" id="foldCores">
       <summary><span class="chev" aria-hidden="true">›</span> Núcleos — clock e uso <span class="fold-sum mono" id="coresResumo"></span></summary>
       <div class="cores" id="cores"><div class="empty">Sem dados por núcleo.</div></div>
@@ -2116,6 +2117,25 @@ body.compact .kpi .kv{font-size:24px}
     if (d.open) maisAbertos[d.dataset.k] = 1; else delete maisAbertos[d.dataset.k];
     try { localStorage.setItem('mh-disco-mais', JSON.stringify(maisAbertos)); } catch (er) {}
   }, true);
+  // ---------- plano de energia (o servidor vigia; aqui mostra e oferece voltar ao Equilibrado)
+  function tickEnergia() {
+    fetch('/energia', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (p) {
+      $('cpuPlanoRow').hidden = !p.nome;
+      if (!p.nome) return;
+      setText('cpuPlano', p.nome);
+      $('cpuPlano').style.color = p.alto ? 'var(--warm)' : '';
+      $('btnPlano').hidden = !p.alto;
+      var quando = p.trocadoEm ? new Date(p.trocadoEm) : null;
+      $('cpuPlanoRow').title = (p.alto ? 'Este plano mantém todos os núcleos em clock e tensão altos mesmo com pouco uso: o processador esquenta. ' : '') +
+        (quando && !isNaN(quando) ? 'Trocado em ' + quando.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + (p.por ? ' por ' + p.por : '') + '.' : '');
+    }).catch(function () {});
+  }
+  $('btnPlano').addEventListener('click', function () {
+    var b = this; b.disabled = true;
+    fetch('/energia', { method: 'POST' }).catch(function () {}).then(function () { b.disabled = false; tickEnergia(); tickAlertas(); });
+  });
+  tickEnergia();
+  setInterval(tickEnergia, 10000);
   function tickSaude() {
     fetch('/saude', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
       if (JSON.stringify(j) === JSON.stringify(saude)) return;

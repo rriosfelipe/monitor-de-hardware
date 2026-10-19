@@ -38,6 +38,7 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
   | Monitor stalled | LibreHardwareMonitor not responding for 1 min |
 
   Several alerts at once are merged into a single notification. Every active alert is listed under the **bell** in the header, with a counter (red when any is urgent). Alerts about the current moment (temperature, memory, SSD spare area, missing readings) also raise a Windows notification (repeated at most every 6 hours while they last; bad sectors, once a week); long-term ones (SSD wear, HDD age) stay in the bell only, with no Windows notification.
+- **Power plan watch.** The CPU card shows the active Windows power plan. If it switches to "Ultimate Performance" or "High performance" (which keep every core at high clock and voltage and heat the CPU), the monitor tells you when and by which program it was changed, and offers a button to go back to Balanced.
 - **Drive health trends.** Each SSD card shows its wear rate (life lost per month over recent months, the average over the whole history and the estimated time left until 10 %), and each HDD shows its reallocated, pending and unreadable sectors. The monitor warns when an SSD's wear speeds up or its time left gets short, and when an HDD gains bad sectors. It uses the per-drive history kept by CrystalDiskInfo and a daily snapshot written to `registros/saude-discos.csv`; HDD sector counts require the CrystalDiskInfo SMART reading (`instalar-smart.ps1`).
 - **Disk health.** For each drive: its letter (C:, D:…), type (HDD, SSD or NVMe), remaining life, power-on time, and a highlighted note when action is needed.
 - **Enable/disable external HDDs.** Puts a USB drive *offline* in Windows, or back online, with one click. That stops all access to it without unplugging. Before disabling, it warns about programs using the drive and **qBittorrent torrents** saved on it, then flushes pending writes. The Windows administrator prompt is required.
@@ -124,6 +125,7 @@ LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ─�
 | `servidor.ps1` | Tray app and local HTTP server. Relays sensor data, evaluates alerts, keeps a 15-minute history buffer, queries drive letters and disk state in the background, and enables/disables external drives through an elevated `Set-Disk`. |
 | `index.html` | The whole dashboard (HTML, CSS and JS in one file). |
 | `Janela.cs` | Resizes the dashboard window for compact mode (Windows API). It only acts on the active window with the dashboard's exact title. |
+| `Energia.cs` | Reads the active Windows power plan (`powrprof` API) |
 | `Processos.cs` | Per-program CPU time and GPU engine/VRAM usage. It uses the native PDH API, because `Get-Counter` is far too slow with hundreds of GPU counter instances. |
 | `Registro.cs` | Per-minute aggregation, daily CSV files, retention, and downsampled series for the charts. |
 | `Iniciar monitor.bat` | Starts `servidor.ps1` hidden. |
@@ -155,6 +157,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `GET /smart` | SMART read by CrystalDiskInfo, per disk number |
 | `GET /gpus` | Graphics cards and their real VRAM size |
 | `GET /saude` | Health trend of each drive: SSD wear rate and HDD sector counts |
+| `GET/POST /energia` | Active power plan (name, whether it is a high-performance one, when and by which program it was changed); POST switches back to Balanced |
 | `GET/POST /sessao` | Session recording state and last summary; starts or stops a recording |
 | `POST /abrir-sessoes` | Opens the recorded sessions folder in Explorer |
 | `GET /nvidia` | NVIDIA cards from the driver: clocks, power state, PCIe link and power limit |

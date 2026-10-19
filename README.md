@@ -36,6 +36,7 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
   | Monitor sem leituras | LibreHardwareMonitor parado por 1 min | 1 h |
 
   Vários alertas ao mesmo tempo viram uma notificação só, e clicar nela abre o painel. Todos os alertas ativos ficam no **sino** do cabeçalho, com um contador (vermelho quando há algum urgente) e a lista ao clicar. Os do momento (temperatura, memória, reserva do SSD, leituras paradas) geram notificação do Windows (repetida no máximo a cada 6 h enquanto persistirem; setores com defeito, 1 vez por semana); os crônicos (desgaste do SSD, idade do HD) ficam só no sino, sem notificação.
+- **Vigia do plano de energia.** O cartão do processador mostra o plano de energia ativo. Se ele mudar para "Desempenho Máximo" ou "Alto desempenho" (que mantêm todos os núcleos em clock e tensão altos e esquentam o processador), o monitor avisa quando e por qual programa foi trocado, e oferece um botão para voltar ao Equilibrado.
 - **Tendência de saúde dos discos.** Cada cartão de SSD mostra o ritmo de desgaste (% de vida perdida por mês nos últimos meses, a média de todo o histórico e o prazo estimado até 10 %), e cada HD mostra os setores realocados, pendentes e ilegíveis. O monitor avisa quando o desgaste de um SSD acelera ou o prazo fica curto, e quando um HD ganha setores com defeito. Usa o histórico que o CrystalDiskInfo guarda por disco e um retrato diário gravado em `registros/saude-discos.csv`; os setores dos HDs exigem a leitura SMART pelo CrystalDiskInfo (`instalar-smart.ps1`).
 - **Saúde dos discos.** Para cada disco: letra da unidade (C:, D:…), tipo (HD, SSD ou NVMe), vida útil restante, tempo ligado e uma nota em destaque quando há algo a fazer.
 - **Desativar e ativar HDs externos.** Coloca um disco USB *offline* no Windows, ou de volta online, com um clique. O Windows para de acessá-lo sem precisar desconectar o cabo, e **nada é apagado**. Antes de desativar, o painel avisa sobre programas usando o disco e **torrents do qBittorrent** salvos nele, e grava o que estiver pendente. Exige a confirmação de administrador do Windows.
@@ -122,6 +123,7 @@ LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ─�
 | `servidor.ps1` | Programa da bandeja e servidor HTTP local. Repassa os dados dos sensores, avalia os alertas, guarda 15 minutos de histórico, consulta em segundo plano as letras e o estado dos discos, e ativa ou desativa discos externos com um `Set-Disk` elevado. |
 | `index.html` | O painel inteiro (HTML, CSS e JS num arquivo só). |
 | `Janela.cs` | Redimensiona a janela do painel no modo compacto (API do Windows). Só age na janela ativa com o título exato do painel. |
+| `Energia.cs` | Lê o plano de energia ativo do Windows (API `powrprof`). |
 | `Processos.cs` | Tempo de CPU por programa e uso de GPU (motor e VRAM). Usa a API nativa PDH, porque o `Get-Counter` é lento demais com as centenas de instâncias dos contadores de GPU. |
 | `Registro.cs` | Agregação por minuto, arquivos CSV diários, limpeza dos antigos e séries resumidas para os gráficos. |
 | `Iniciar monitor.bat` | Inicia o `servidor.ps1` escondido. |
@@ -153,6 +155,7 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `GET /smart` | SMART lido pelo CrystalDiskInfo, por número de disco |
 | `GET /gpus` | Placas de vídeo e o tamanho real da VRAM de cada uma |
 | `GET /saude` | Tendência de saúde de cada disco: ritmo de desgaste dos SSDs e setores dos HDs |
+| `GET/POST /energia` | Plano de energia ativo (nome, se é de alto desempenho, quando e por qual programa foi trocado); o POST volta ao Equilibrado |
 | `GET/POST /sessao` | Estado da gravação de sessão e resumo da última; inicia ou para a gravação |
 | `POST /abrir-sessoes` | Abre a pasta das sessões gravadas no Explorador |
 | `GET /nvidia` | Placas NVIDIA pelo driver: clocks, estado de energia, ligação PCIe e limite de potência |

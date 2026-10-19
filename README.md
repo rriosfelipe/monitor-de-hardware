@@ -27,15 +27,15 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
 
   | Alerta | Quando | Repete |
   |---|---|---|
-  | CPU ou GPU quente | acima do limite "quente" por 10 s | a cada 30 min por episódio; 1 h se persistir |
+  | CPU ou GPU quente | acima do limite "quente" por 10 s | 1 vez por episódio (no máximo a cada 1 h); a cada 6 h se persistir |
   | Disco quente | acima do limite de disco por 30 s (nos NVMe, vale o limite gravado pelo fabricante) | 6 h por episódio; 1 dia se persistir |
   | Vida útil do SSD | abaixo de 70 % | 1 vez por semana |
   | Reserva do SSD esgotada | chegou ao mínimo do fabricante | 1 vez por dia |
   | HD antigo | mais de 40 mil horas ligado | 1 vez por semana |
-  | Memória quase no limite | memória confirmada acima de 90 % do limite por 30 s | 30 min |
+  | Memória quase no limite | memória confirmada acima de 90 % do limite por 30 s | 1 h; a cada 6 h se persistir |
   | Monitor sem leituras | LibreHardwareMonitor parado por 1 min | 1 h |
 
-  Vários alertas ao mesmo tempo viram uma notificação só, e clicar nela abre o painel. Todos os alertas ativos ficam no **sino** do cabeçalho, com um contador (vermelho quando há algum urgente) e a lista ao clicar. Os do momento (temperatura, memória, reserva do SSD, leituras paradas) geram notificação do Windows e também aparecem em faixa no topo do painel e podem ser dispensados até a próxima abertura; os crônicos (desgaste do SSD, idade do HD) ficam só no sino, sem notificação.
+  Vários alertas ao mesmo tempo viram uma notificação só, e clicar nela abre o painel. Todos os alertas ativos ficam no **sino** do cabeçalho, com um contador (vermelho quando há algum urgente) e a lista ao clicar. Os do momento (temperatura, memória, reserva do SSD, leituras paradas) geram notificação do Windows (repetida no máximo a cada 6 h enquanto persistirem; setores com defeito, 1 vez por semana); os crônicos (desgaste do SSD, idade do HD) ficam só no sino, sem notificação.
 - **Tendência de saúde dos discos.** Cada cartão de SSD mostra o ritmo de desgaste (% de vida perdida por mês nos últimos meses, a média de todo o histórico e o prazo estimado até 10 %), e cada HD mostra os setores realocados, pendentes e ilegíveis. O monitor avisa quando o desgaste de um SSD acelera ou o prazo fica curto, e quando um HD ganha setores com defeito. Usa o histórico que o CrystalDiskInfo guarda por disco e um retrato diário gravado em `registros/saude-discos.csv`; os setores dos HDs exigem a leitura SMART pelo CrystalDiskInfo (`instalar-smart.ps1`).
 - **Saúde dos discos.** Para cada disco: letra da unidade (C:, D:…), tipo (HD, SSD ou NVMe), vida útil restante, tempo ligado e uma nota em destaque quando há algo a fazer.
 - **Desativar e ativar HDs externos.** Coloca um disco USB *offline* no Windows, ou de volta online, com um clique. O Windows para de acessá-lo sem precisar desconectar o cabo, e **nada é apagado**. Antes de desativar, o painel avisa sobre programas usando o disco e **torrents do qBittorrent** salvos nele, e grava o que estiver pendente. Exige a confirmação de administrador do Windows.

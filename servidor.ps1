@@ -922,16 +922,16 @@ function Acima([string]$chave, [double]$v, [double]$limite) {
 function Verificar-Alertas($r) {
     $cfg = Ler-Config
     Avaliar 'lhm' $false 0 0 0 '' '' ''
-    Avaliar 'cpu-temp' (Acima 'cpu-temp' $r.cpu $cfg.limiteQuente) 5 30 60 'quente' `
+    Avaliar 'cpu-temp' (Acima 'cpu-temp' $r.cpu $cfg.limiteQuente) 5 60 360 'quente' `
         "Processador a $(Fmt $r.cpu) °C" "Acima de $($cfg.limiteQuente) °C há mais de 10 segundos. Uso: $(Fmt $r.cpuUso) %."
     foreach ($hw in $r.gpus.Keys) {
         $g = $r.gpus[$hw]
-        Avaliar "gpu-temp$hw" (Acima "gpu-temp$hw" $g.temp $cfg.limiteQuente) 5 30 60 'quente' `
+        Avaliar "gpu-temp$hw" (Acima "gpu-temp$hw" $g.temp $cfg.limiteQuente) 5 60 360 'quente' `
             "$($g.nome) a $(Fmt $g.temp) °C" "Placa de vídeo acima de $($cfg.limiteQuente) °C há mais de 10 segundos. Uso: $(Fmt $g.uso) %."
     }
     $limVirt = $r.virtUsada + $r.virtLivre
     $pctVirt = if ($limVirt -gt 0) { $r.virtUsada / $limVirt * 100 } else { $NaN }
-    Avaliar 'memoria' (Acima 'memoria' $pctVirt 90) 15 30 60 'quente' `
+    Avaliar 'memoria' (Acima 'memoria' $pctVirt 90) 15 60 360 'quente' `
         "Memória quase no limite ($(Fmt $pctVirt) %)" "$(Fmt $r.virtUsada 1) de $(Fmt $limVirt 0) GB confirmados. Feche programas para evitar travamentos."
     try { Saude-Atualizar $r } catch { }
     foreach ($hw in $r.discos.Keys) {
@@ -968,7 +968,7 @@ function Verificar-Alertas($r) {
             $texto = if ($ilegiveis) { "Há setores que o disco não consegue ler ($($t.pendentes) pendentes, $($t.incorrigiveis) ilegíveis). Copie agora os dados importantes dele." }
                      else { "Os setores realocados subiram de $($t.realocadosAntes) para $($t.realocados) desde $(([datetime]$t.realocadosDesde).ToString('MM/yyyy')) e continuaram subindo nos últimos meses: a superfície está se degradando. Faça backup do que estiver nele e planeje a troca." }
         } else { $titulo = ''; $texto = '' }
-        Avaliar "disco-setores$hw" ($ilegiveis -or $cresceu) 1 1440 1440 'quente' $titulo $texto
+        Avaliar "disco-setores$hw" ($ilegiveis -or $cresceu) 1 10080 10080 'quente' $titulo $texto
         Avaliar "disco-idade$hw" ($d.hdd -and $d.horas -ge 40000) 1 $semana $semana 'morno' `
             "HD $lt$($d.nome): $(Fmt ($d.horas / 8760) 1) anos ligado" "$(Fmt $d.horas) horas de uso. HDs nessa idade falham com mais frequência: mantenha backup do que estiver nele."
     }

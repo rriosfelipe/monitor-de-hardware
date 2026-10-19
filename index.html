@@ -197,8 +197,8 @@ details.hw[open] summary .chev{transform:rotate(90deg)}
 .tend{font:12px/1.45 var(--mono);color:var(--muted)}
 .mais summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;min-height:28px;font-size:12px;color:var(--muted);border-radius:6px}
 .mais summary::-webkit-details-marker{display:none}
-.mais summary::before{content:'A';display:inline-block;font-size:15px;line-height:1;transition:transform .15s}
-.mais[open] summary::before{transform:rotate(90deg)}
+.mais summary .ic{width:15px;height:15px}
+.mais[open] summary{color:var(--text)}
 .mais summary:hover{color:var(--text)}
 .mais>div{margin-top:4px}
 .ponto{width:8px;height:8px;border-radius:50%;display:inline-block}
@@ -652,6 +652,7 @@ body.compact .kpi .kv{font-size:24px}
     board: '<rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="6" height="6" rx="1"/><path d="M16 7h2M16 11h2M7 17h4M15 17h3"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
     relogio: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
     alerta: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/>',
     sino: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'
   };
@@ -2040,9 +2041,10 @@ body.compact .kpi .kv{font-size:24px}
     if (sig === avisosSig) return;
     avisosSig = sig;
     desenharSino();
-    var lista = avisosLista.filter(function (a) { return !cronico(a) && !dispensados[a.chave]; });
+    // Sem faixas no topo: todos os alertas ficam no sino (vermelho quando há algum urgente).
+    var lista = [];
     var box = $('avisos');
-    box.hidden = !lista.length;
+    box.hidden = true;
     box.innerHTML = lista.map(function (a) {
       return '<div class="aviso' + (a.nivel === 'quente' ? ' quente' : '') + '">' + icone('alerta') +
         '<div><strong>' + esc(a.titulo) + '</strong><span>' + esc(a.texto) + '</span></div>' +
@@ -2105,7 +2107,7 @@ body.compact .kpi .kv{font-size:24px}
   function maisInfo(chave, html) {
     if (!html) return '';
     var pior = /class="(?:tend|nota) hot"/.test(html) ? 'hot' : /class="(?:tend|nota) warm"/.test(html) ? 'warm' : '';
-    return '<details class="mais" data-k="' + esc(chave) + '"' + (maisAbertos[chave] ? ' open' : '') + '><summary>Mais informações' +
+    return '<details class="mais" data-k="' + esc(chave) + '"' + (maisAbertos[chave] ? ' open' : '') + '><summary>' + icone('info') + 'Mais informações' +
       (pior ? ' <i class="ponto ' + pior + '" aria-label="' + (pior === 'hot' ? 'há um problema' : 'há um aviso') + '"></i>' : '') + '</summary><div>' + html + '</div></details>';
   }
   $('drives').addEventListener('toggle', function (e) {

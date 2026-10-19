@@ -452,7 +452,7 @@ body.compact .kpi .kv{font-size:24px}
         <div class="glegend"><span><i style="background:var(--ok)"></i>temperatura</span><span><i style="background:var(--accent)"></i>uso</span></div>
       </div>
       <div class="stats">
-        <div><div class="lbl">Clock do núcleo</div><div class="big" style="color:var(--accent)"><span id="gpuClock">—</span> <small>MHz</small></div></div>
+        <div><div class="lbl" id="gpuClockLbl">Clock do núcleo</div><div class="big" style="color:var(--accent)"><span id="gpuClock">—</span> <small>MHz</small></div></div>
         <div><div class="lbl">Uso</div><div class="big"><span id="gpuLoad">—</span> <small>%</small></div></div>
         <div><div class="lbl" id="gpuPowerLbl">Potência</div><div class="big"><span id="gpuPower">—</span> <small>W</small></div></div>
         <div><div class="lbl" id="gpuHotLbl">Hotspot</div><div class="big"><span id="gpuHot">—</span> <small class="unit"></small></div></div>
@@ -606,6 +606,7 @@ body.compact .kpi .kv{font-size:24px}
   <fieldset>
     <legend>Alertas</legend>
     <label class="chk"><input type="checkbox" data-k="alertas"> Notificações do Windows quando algo passar do limite</label>
+    <div id="ajustesGpu" style="grid-column:1/-1"></div>
     <label class="nfield" style="grid-column:1/-1">Disco quente a partir de <input type="number" min="40" max="80" step="1" data-k="limiteDisco" aria-label="Disco quente a partir de, em graus Celsius"> °C</label>
     <p class="lbl" style="grid-column:1/-1;margin:0">CPU e GPU alertam na faixa "quente" acima. Discos NVMe usam o limite que o próprio fabricante grava neles. Também há alerta de vida útil do SSD, HD com mais de 40 mil horas, memória confirmada acima de 90 % e LibreHardwareMonitor parado.</p>
   </fieldset>
@@ -1022,6 +1023,9 @@ body.compact .kpi .kv{font-size:24px}
     var tt = vramReal[base] != null ? vramReal[base] : toGB(total);
     if (isNaN(tt) && !isNaN(u) && livre) tt = u + toGB(livre);
     var t = temp ? temp.value : NaN, lv = load ? load.value : NaN, w = pw ? pw.value : NaN;
+    // desconto configurado nos Ajustes para placa com medidor de potência que lê a mais
+    var desconto = (cfg.ajustePotencia || {})[base] || 0, wLida = w;
+    if (desconto > 0 && !isNaN(w)) w = Math.max(0, w - desconto);
     // O LibreHardwareMonitor devolve 0 MHz com a placa NVIDIA em repouso: aí vale o clock informado pelo driver.
     var nv = nvidia[base];
     function clock(s, doDriver) { return s && s.value > 0 ? s.value : doDriver != null ? doDriver : s ? s.value : NaN; }
@@ -1029,7 +1033,7 @@ body.compact .kpi .kv{font-size:24px}
       hid: g.hid, nome: g.top, curto: nomeCurto(g.top), t: t, hot: hot, hotLbl: hotLbl, nv: nv,
       clk: clock(clk, nv && nv.clk), mem: clock(mem, nv && nv.mem), lv: lv, memLoad: memLoad, w: w,
       // potência alta com a placa parada e fria é leitura errada do sensor da placa: fica fora da soma de energia
-      wSusp: w > 60 && lv < 3 && t < 45,
+      wSusp: w > 60 && lv < 3 && t < 45, wLida: wLida, desconto: desconto,
       fanTxt: fan ? fmt(fan.value) + ' RPM' : (ctl ? fmt(ctl.value) + '%' : '—'),
       u: u, tt: tt, vp: !isNaN(u) && tt > 0 ? Math.min(100, u / tt * 100) : NaN
     };
@@ -1069,10 +1073,18 @@ body.compact .kpi .kv{font-size:24px}
     setText('gpuMemLoad', fmt(sel && sel.memLoad && sel.memLoad.value));
     setText('gpuPower', fmt(sel ? sel.w : NaN));
     var susp = !!(sel && sel.wSusp);
+    // o driver está cortando o clock? (só com a placa em uso; parada, o clock baixo é normal)
+    var nvSel = sel && sel.nv, corte = '';
+    if (nvSel && sel.lv >= 50) corte = nvSel.cortePotencia ? 'potência' : nvSel.corteTemp || nvSel.corteHw ? 'temperatura' : '';
+    setText('gpuClockLbl', corte ? 'Clock do núcleo · limitado por ' + corte : 'Clock do núcleo');
+    $('gpuClockLbl').style.color = corte ? 'var(--warm)' : '';
+    $('gpuClockLbl').title = corte === 'potência' ? 'O driver está reduzindo o clock porque a potência lida chegou ao limite da placa.'
+      : corte ? 'O driver está reduzindo o clock por temperatura.' : '';
     setText('gpuPowerLbl', susp ? 'Potência ⚠' : 'Potência');
     $('gpuPower').parentNode.style.opacity = susp ? .45 : '';
     $('gpuPowerLbl').title = $('gpuPower').parentNode.title = susp
       ? 'Leitura não confiável: a placa está parada e fria, o que não combina com essa potência. O valor fica fora do indicador de Energia.' : '';
+    if (!susp && sel && sel.desconto > 0) $('gpuPowerLbl').title = $('gpuPower').parentNode.title = 'Lida: ' + fmt(sel.wLida) + ' W, menos ' + sel.desconto + ' W descontados nos Ajustes.';
     var nv = sel && sel.nv, pcie = $('gpuPcieRow');
     pcie.hidden = !(nv && nv.larg);
     if (nv && nv.larg) {
@@ -2268,9 +2280,29 @@ body.compact .kpi .kv{font-size:24px}
     if (!salvou) { aplicarCores(cfg); redesenhar(); }
     dlg.close();
   }
+  // Desconto da potência lida, por placa (para medidor de potência com defeito, que lê a mais)
+  function preencherAjustesGpu() {
+    var nomes = [];
+    if (last) family(parse(last), 'gpu').forEach(function (g) { var n = g.top.replace(/ \(\d+\)$/, ''); if (nomes.indexOf(n) < 0) nomes.push(n); });
+    $('ajustesGpu').innerHTML = nomes.map(function (n) {
+      return '<label class="nfield">Descontar da potência lida de ' + esc(nomeCurto(n)) +
+        ' <input type="number" min="0" max="400" step="1" data-gpu="' + esc(n) + '" value="' + ((rascunho.ajustePotencia || {})[n] || 0) + '" aria-label="Watts a descontar da potência lida de ' + esc(n) + '"> W</label>';
+    }).join('') + (nomes.length ? '<p class="warn" style="color:var(--muted)">Use só se o medidor da placa lê a mais. O valor é a leitura com a placa parada menos uns 20 W.</p>' : '');
+  }
+  $('ajustesGpu').addEventListener('input', function (e) {
+    var n = e.target.dataset && e.target.dataset.gpu;
+    if (!n) return;
+    e.stopPropagation();
+    var v = parseInt(e.target.value, 10);
+    rascunho.ajustePotencia = Object.assign({}, rascunho.ajustePotencia);
+    if (v > 0 && v <= 400) rascunho.ajustePotencia[n] = v; else delete rascunho.ajustePotencia[n];
+    previa();
+  });
   $('btnCores').addEventListener('click', function () {
     rascunho = Object.assign({}, cfg);
+    rascunho.ajustePotencia = Object.assign({}, cfg.ajustePotencia);
     preencher(rascunho); validar(rascunho);
+    preencherAjustesGpu();
     dlg.showModal();
   });
   dlg.addEventListener('cancel', function (e) { e.preventDefault(); fechar(false); });

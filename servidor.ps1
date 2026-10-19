@@ -58,6 +58,7 @@ $padraoConfig = [ordered]@{
     fundo = '#0D1014'; painel = '#151A20'; texto = '#E6EAF0'; secundario = '#8B95A3'; destaque = '#56C2E6'
     normal = '#4FD1A5'; morno = '#F2B33D'; quente = '#FF6B4A'; limiteMorno = 65; limiteQuente = 80
     alertas = $true; limiteDisco = 60; iconeModo = 'quente'
+    ajustePotencia = [ordered]@{}   # nome da placa -> watts a descontar da potência lida (medidor com defeito)
 }
 function Validar-Config($obj) {
     $c = [ordered]@{}
@@ -75,6 +76,13 @@ function Validar-Config($obj) {
     if ($obj.iconeModo -in 'quente', 'cpu', 'gpu', 'alternar') { $c.iconeModo = [string]$obj.iconeModo }
     $v = $obj.limiteDisco
     if ($v -is [ValueType] -and $v -ge 40 -and $v -le 80) { $c.limiteDisco = [int]$v }
+    $aj = [ordered]@{}
+    if ($obj.ajustePotencia -is [System.Management.Automation.PSCustomObject]) {
+        foreach ($p in $obj.ajustePotencia.PSObject.Properties) {
+            if ($p.Name.Length -le 100 -and $p.Value -is [ValueType] -and $p.Value -gt 0 -and $p.Value -le 400) { $aj[$p.Name] = [int]$p.Value }
+        }
+    }
+    $c.ajustePotencia = $aj
     if ($c.limiteQuente -le $c.limiteMorno) { $c.limiteMorno = $padraoConfig.limiteMorno; $c.limiteQuente = $padraoConfig.limiteQuente }
     return $c
 }
@@ -591,6 +599,8 @@ function Ler-Resumo {
     $somaW = 0.0; $temW = $false
     foreach ($hw in $r.gpus.Keys) {
         $g = $r.gpus[$hw]
+        $desconto = (Ler-Config).ajustePotencia[[string]$g.nome]
+        if ($desconto -gt 0 -and -not [double]::IsNaN($g.w)) { $g.w = [math]::Max(0, $g.w - $desconto) }
         # potência alta com a placa parada e fria é leitura errada do sensor da placa: fica fora da soma
         $suspeita = $g.w -gt 60 -and $g.uso -lt 3 -and $g.temp -lt 45
         if (-not [double]::IsNaN($g.w) -and -not $suspeita) { $somaW += $g.w; $temW = $true }
@@ -1263,6 +1273,7 @@ $script:nvidiaJson = '[]'
 $script:nvidiaExe = Join-Path $env:SystemRoot 'System32\nvidia-smi.exe'
 if (-not (Test-Path -LiteralPath $script:nvidiaExe)) { $script:nvidiaExe = $null }
 $script:nvidiaProc = $null
+$script:nvidiaMotivos = $true
 $script:nvidiaHora = [datetime]::MinValue
 $script:nvidiaPedido = [datetime]::MinValue
 function Nvidia-Num([string]$s) {
@@ -1283,9 +1294,12 @@ function Nvidia-Tick {
             foreach ($linha in ($p.StandardOutput.ReadToEnd() -split "`n")) {
                 $c = @($linha.Trim() -split '\s*,\s*')
                 if ($c.Count -lt 9) { continue }
-                $lista += [ordered]@{ nome = $c[0]; clk = Nvidia-Num $c[1]; mem = Nvidia-Num $c[2]; pstate = $c[3]
-                                      gen = Nvidia-Num $c[4]; genMax = Nvidia-Num $c[5]; larg = Nvidia-Num $c[6]; largMax = Nvidia-Num $c[7]; limiteW = Nvidia-Num $c[8] }
+                $item = [ordered]@{ nome = $c[0]; clk = Nvidia-Num $c[1]; mem = Nvidia-Num $c[2]; pstate = $c[3]
+                                    gen = Nvidia-Num $c[4]; genMax = Nvidia-Num $c[5]; larg = Nvidia-Num $c[6]; largMax = Nvidia-Num $c[7]; limiteW = Nvidia-Num $c[8] }
+                if ($c.Count -ge 12) { $item.cortePotencia = $c[9] -eq 'Active'; $item.corteTemp = $c[10] -eq 'Active'; $item.corteHw = $c[11] -eq 'Active' }
+                $lista += $item
             }
+            if (-not $lista.Count -and $script:nvidiaMotivos) { $script:nvidiaMotivos = $false }   # driver antigo: sem os campos de corte
             $script:nvidiaJson = ConvertTo-Json -InputObject @($lista) -Compress
         } catch { }
         $p.Dispose(); $script:nvidiaProc = $null
@@ -1297,7 +1311,9 @@ function Nvidia-Tick {
     try {
         $si = New-Object System.Diagnostics.ProcessStartInfo
         $si.FileName = $script:nvidiaExe
-        $si.Arguments = '--query-gpu=name,clocks.gr,clocks.mem,pstate,pcie.link.gen.gpucurrent,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max,power.limit --format=csv,noheader,nounits'
+        $campos = 'name,clocks.gr,clocks.mem,pstate,pcie.link.gen.gpucurrent,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max,power.limit'
+        if ($script:nvidiaMotivos) { $campos += ',clocks_event_reasons.sw_power_cap,clocks_event_reasons.sw_thermal_slowdown,clocks_event_reasons.hw_slowdown' }
+        $si.Arguments = "--query-gpu=$campos --format=csv,noheader,nounits"
         $si.UseShellExecute = $false; $si.RedirectStandardOutput = $true; $si.CreateNoWindow = $true
         $script:nvidiaProc = [System.Diagnostics.Process]::Start($si)
     } catch { $script:nvidiaProc = $null }

@@ -1034,11 +1034,12 @@ function Verificar-Alertas($r) {
         Avaliar "disco-idade$hw" ($d.hdd -and $d.horas -ge 40000) 1 $semana $semana 'morno' `
             "HD $lt$($d.nome): $(Fmt ($d.horas / 8760) 1) anos ligado" "$(Fmt $d.horas) horas de uso. HDs nessa idade falham com mais frequência: mantenha backup do que estiver nele."
     }
-    # tira do sino alertas de placas e discos que sumiram (HD USB desconectado ou renumerado)
+    # tira do sino alertas de placas e discos que sumiram (HD USB desconectado ou renumerado);
+    # leitura sem nenhuma placa ou disco é falha passageira, não conta
     foreach ($k in @(@($script:ativos.Keys) + @($script:seguidas.Keys))) {
         $m = [regex]::Match([string]$k, '^gpu-temp(.+)$')
-        $sumiu = $m.Success -and -not $r.gpus.Contains($m.Groups[1].Value)
-        if (-not $m.Success) { $m = [regex]::Match([string]$k, '^disco-[a-z]+(/(hdd|ssd|nvme)/\d+)$'); $sumiu = $m.Success -and -not $r.discos.Contains($m.Groups[1].Value) }
+        $sumiu = $m.Success -and $r.gpus.Count -gt 0 -and -not $r.gpus.Contains($m.Groups[1].Value)
+        if (-not $m.Success) { $m = [regex]::Match([string]$k, '^disco-[a-z]+(/(hdd|ssd|nvme)/\d+)$'); $sumiu = $m.Success -and $r.discos.Count -gt 0 -and -not $r.discos.Contains($m.Groups[1].Value) }
         if ($sumiu) { $script:ativos.Remove($k); $script:seguidas.Remove($k) }
     }
 }

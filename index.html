@@ -754,13 +754,13 @@ body.compact .kpi .kv{font-size:24px}
         var path = anc.slice(2);
         if (!path.length) return;
         // a chave usa o HardwareId: dois discos do mesmo modelo têm o mesmo nome
-        var nome = path.map(function (n) { return n.Text.trim(); }).join(' › ');
+        var nome = path.map(function (n) { return String(n.Text || '').trim(); }).join(' › ');
         var key = nome + (path[path.length - 1].HardwareId ? ' @' + path[path.length - 1].HardwareId : '');
         var hw = byKey[key];
         if (!hw) {
           var rep = (nomes[nome] = (nomes[nome] || 0) + 1);
           var rotulo = rep > 1 ? nome + ' (' + rep + ')' : nome;
-          hw = { key: key, name: rotulo, kind: kindOf(path[0]), top: rep > 1 ? path[0].Text.trim() + ' (' + rep + ')' : path[0].Text.trim(), hid: String(path[0].HardwareId || ''), groups: [] };
+          hw = { key: key, name: rotulo, kind: kindOf(path[0]), top: rep > 1 ? String(path[0].Text || '').trim() + ' (' + rep + ')' : String(path[0].Text || '').trim(), hid: String(path[0].HardwareId || ''), groups: [] };
           if (path.length > 1 && hw.kind === 'other') hw.kind = kindOf(path[path.length - 1]);
           byKey[key] = hw; hws.push(hw);
         }
@@ -1017,11 +1017,13 @@ body.compact .kpi .kv{font-size:24px}
     var usadaPlaca = find(g, 'Data', /memory used/i, /shared|d3d/i), usadaWin = find(g, 'Data', /dedicated memory used/i);
     var total = find(g, 'Data', /memory total/i, /shared/i), livre = find(g, 'Data', /memory free/i, /shared/i);
     var u = toGB(varias && usadaWin ? usadaWin : (usadaPlaca || usadaWin));
-    var tt = vramReal[g.top] != null ? vramReal[g.top] : toGB(total);
+    // a segunda placa igual recebe " (2)" no nome: as tabelas por nome usam o nome sem o sufixo
+    var base = g.top.replace(/ \(\d+\)$/, '');
+    var tt = vramReal[base] != null ? vramReal[base] : toGB(total);
     if (isNaN(tt) && !isNaN(u) && livre) tt = u + toGB(livre);
     var t = temp ? temp.value : NaN, lv = load ? load.value : NaN, w = pw ? pw.value : NaN;
     // O LibreHardwareMonitor devolve 0 MHz com a placa NVIDIA em repouso: aí vale o clock informado pelo driver.
-    var nv = nvidia[g.top];
+    var nv = nvidia[base];
     function clock(s, doDriver) { return s && s.value > 0 ? s.value : doDriver != null ? doDriver : s ? s.value : NaN; }
     return {
       hid: g.hid, nome: g.top, curto: nomeCurto(g.top), t: t, hot: hot, hotLbl: hotLbl, nv: nv,
@@ -1029,7 +1031,7 @@ body.compact .kpi .kv{font-size:24px}
       // potência alta com a placa parada e fria é leitura errada do sensor da placa: fica fora da soma de energia
       wSusp: w > 60 && lv < 3 && t < 45,
       fanTxt: fan ? fmt(fan.value) + ' RPM' : (ctl ? fmt(ctl.value) + '%' : '—'),
-      u: u, tt: tt, vp: !isNaN(u) && tt > 0 ? u / tt * 100 : NaN
+      u: u, tt: tt, vp: !isNaN(u) && tt > 0 ? Math.min(100, u / tt * 100) : NaN
     };
   }
   function renderGpu(hws) {
@@ -1047,8 +1049,8 @@ body.compact .kpi .kv{font-size:24px}
       if (caixa.dataset.sig !== sig) {
         caixa.innerHTML = infos.map(function (i) { return '<option value="' + esc(i.hid) + '">' + esc(i.nome) + '</option>'; }).join('');
         caixa.dataset.sig = sig;
-      }
-      if (document.activeElement !== caixa) caixa.value = sel.hid;
+        caixa.value = sel.hid;   // opções refeitas: sempre volta à placa mostrada
+      } else if (document.activeElement !== caixa) caixa.value = sel.hid;
       caixa.hidden = false; $('gpuModel').hidden = true;
     } else {
       caixa.hidden = true; $('gpuModel').hidden = false;
@@ -1132,7 +1134,9 @@ body.compact .kpi .kv{font-size:24px}
     var temClk = memClk && memClk.value > 0;
     setText('ramFreq', temClk ? fmt(memClk.value * 2) + ' MT/s' : ramFreqWin ? fmt(ramFreqWin) + ' MT/s' : '—');
     $('ramFreq').title = temClk ? 'Clock real: ' + fmt(memClk.value) + ' MHz (DDR transfere 2 vezes por ciclo)' : ramFreqWin ? 'Velocidade configurada dos pentes, informada pelo Windows' : '';
-    setText('ramDimms', dimms.length ? dimms.length + ' × ' + fmt(cap[0], 0) + ' GB' : '—');
+    var capIguais = cap.every(function (v) { return v === cap[0]; });
+    setText('ramDimms', !dimms.length ? '—' : capIguais ? dimms.length + ' × ' + fmt(cap[0], 0) + ' GB'
+      : cap.map(function (v) { return fmt(v, 0); }).join(' + ') + ' GB');
     var u = toGB(used), a = toGB(avail);
     var total = u + a;
     setText('ramUsed', fmt(u, 1));

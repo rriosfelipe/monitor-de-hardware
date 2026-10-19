@@ -53,6 +53,20 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
 
 ## Setup
 
+### Quick setup
+
+1. Download or clone this repository into a permanent folder (the shortcuts point to it).
+2. Double-click **`Instalar.bat`** and accept the administrator prompt. It:
+   - installs LibreHardwareMonitor with `winget` if missing, turns on its web server (port 8085), and makes it start minimized to the tray with Windows;
+   - creates the **Monitor de Hardware** desktop shortcut and the tray icon at sign-in;
+   - if CrystalDiskInfo is installed, offers to turn on the SMART reading (HDD sectors and drive trends);
+   - starts the monitor.
+3. The first time, LibreHardwareMonitor asks to install the PawnIO driver: accept it.
+
+To undo, run **`Desinstalar.bat`**: it removes the shortcuts and the SMART task and keeps LibreHardwareMonitor and the logs. To see what the installer would do without changing anything: `powershell -ExecutionPolicy Bypass -File instalar.ps1 -Simular`.
+
+### Manual setup
+
 1. **Install LibreHardwareMonitor:**
    ```powershell
    winget install LibreHardwareMonitor.LibreHardwareMonitor
@@ -131,6 +145,7 @@ LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ─�
 | `Registro.cs` | Per-minute aggregation, daily CSV files, retention, and downsampled series for the charts. |
 | `Iniciar monitor.bat` | Starts `servidor.ps1` hidden. |
 | `instalar-smart.ps1` | Creates or removes the scheduled task that makes CrystalDiskInfo write the SMART report (optional). |
+| `instalar.ps1`, `Instalar.bat`, `Desinstalar.bat` | One-click install and removal (shortcuts, LibreHardwareMonitor and SMART reading). `-Simular` shows what would be done |
 
 Files created at runtime, kept out of git by `.gitignore`:
 

@@ -51,6 +51,20 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
 
 ## Instalação
 
+### Instalação rápida
+
+1. Baixe ou clone este repositório numa pasta fixa (os atalhos apontam para ela).
+2. Dê dois cliques em **`Instalar.bat`** e aceite o pedido de administrador. Ele:
+   - instala o LibreHardwareMonitor pelo `winget`, se faltar, liga o servidor web dele (porta 8085), deixa-o minimizado na bandeja e iniciando com o Windows;
+   - cria o atalho **Monitor de Hardware** na área de trabalho e o ícone na bandeja ao entrar no Windows;
+   - se o CrystalDiskInfo estiver instalado, oferece ativar a leitura SMART (setores dos HDs e tendência dos discos);
+   - abre o monitor.
+3. Na primeira vez, o LibreHardwareMonitor pede para instalar o driver PawnIO: aceite.
+
+Para desfazer, use **`Desinstalar.bat`**: tira os atalhos e a leitura SMART e mantém o LibreHardwareMonitor e os registros. Para ver o que o instalador faria sem mudar nada: `powershell -ExecutionPolicy Bypass -File instalar.ps1 -Simular`.
+
+### Instalação manual
+
 1. **Instale o LibreHardwareMonitor:**
    ```powershell
    winget install LibreHardwareMonitor.LibreHardwareMonitor
@@ -129,6 +143,7 @@ LibreHardwareMonitor ──(localhost:8085/data.json)──► servidor.ps1 ─�
 | `Registro.cs` | Agregação por minuto, arquivos CSV diários, limpeza dos antigos e séries resumidas para os gráficos. |
 | `Iniciar monitor.bat` | Inicia o `servidor.ps1` escondido. |
 | `instalar-smart.ps1` | Cria ou remove a tarefa agendada que faz o CrystalDiskInfo gravar o relatório SMART (opcional). |
+| `instalar.ps1`, `Instalar.bat`, `Desinstalar.bat` | Instalação e remoção em um clique (atalhos, LibreHardwareMonitor e leitura SMART). `-Simular` mostra o que seria feito. |
 
 Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 

@@ -2283,7 +2283,7 @@ body.compact .kpi .kv{font-size:24px}
   // Desconto da potência lida, por placa (para medidor de potência com defeito, que lê a mais)
   function preencherAjustesGpu() {
     var nomes = [];
-    if (last) family(parse(last), 'gpu').forEach(function (g) { var n = g.top.replace(/ \(\d+\)$/, ''); if (nomes.indexOf(n) < 0) nomes.push(n); });
+    if (last) family(parse(last).hws, 'gpu').forEach(function (g) { var n = g.top.replace(/ \(\d+\)$/, ''); if (nomes.indexOf(n) < 0) nomes.push(n); });
     $('ajustesGpu').innerHTML = nomes.map(function (n) {
       return '<label class="nfield">Descontar da potência lida de ' + esc(nomeCurto(n)) +
         ' <input type="number" min="0" max="400" step="1" data-gpu="' + esc(n) + '" value="' + ((rascunho.ajustePotencia || {})[n] || 0) + '" aria-label="Watts a descontar da potência lida de ' + esc(n) + '"> W</label>';

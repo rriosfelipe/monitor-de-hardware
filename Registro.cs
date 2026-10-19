@@ -38,6 +38,9 @@ namespace MonitorHW
         readonly List<Linha> linhas = new List<Linha>();
         readonly Dictionary<string, string> nomes = new Dictionary<string, string>();
         long minutoAtual = -1;
+        const int MaxPendentes = 1440;   // linhas guardadas por arquivo quando a gravação falha
+        readonly Dictionary<string, List<string>> pendentes = new Dictionary<string, List<string>>();
+        DateTime ultimaLimpeza = DateTime.MinValue;
         Acum acum = new Acum();
 
         public Registro(string pasta, int diasReter)
@@ -46,6 +49,7 @@ namespace MonitorHW
             this.diasReter = diasReter;
             Directory.CreateDirectory(pasta);
             Limpar();
+            ultimaLimpeza = DateTime.Today;
             Carregar();
         }
 
@@ -104,10 +108,15 @@ namespace MonitorHW
             var quando = Local(l.T);
             string hora = quando.ToString("yyyy-MM-dd HH:mm", inv);
             string dia = quando.ToString("yyyy-MM-dd", inv);
+            // Cada arquivo tem a sua fila: se um falhar, o outro ainda é gravado.
             try
             {
                 Acrescentar(Path.Combine(pasta, dia + ".csv"), Cabecalho, string.Join(";", new[] {
                     hora, Csv(l.CpuT), Csv(l.CpuTmax), Csv(l.CpuU), Csv(l.GpuT), Csv(l.GpuTmax), Csv(l.GpuU), Csv(l.CpuW), Csv(l.GpuW), Csv(l.Ram) }));
+            }
+            catch { /* disco cheio ou arquivo aberto no Excel: a linha fica na fila e é gravada na próxima vez */ }
+            try
+            {
                 if (l.Discos.Count > 0)
                 {
                     var sb = new StringBuilder();
@@ -115,23 +124,34 @@ namespace MonitorHW
                     {
                         string nome;
                         nomes.TryGetValue(kv.Key, out nome);
-                        sb.Append(hora).Append(';').Append((nome ?? kv.Key).Replace(";", ",")).Append(';').Append(kv.Key).Append(';').Append(Csv(kv.Value)).Append("\r\n");
+                        if (sb.Length > 0) sb.Append("\r\n");
+                        sb.Append(hora).Append(';').Append(Limpo(nome ?? kv.Key)).Append(';').Append(Limpo(kv.Key)).Append(';').Append(Csv(kv.Value));
                     }
-                    Acrescentar(Path.Combine(pasta, "discos-" + dia + ".csv"), CabecalhoDiscos, sb.ToString().TrimEnd('\r', '\n'));
+                    Acrescentar(Path.Combine(pasta, "discos-" + dia + ".csv"), CabecalhoDiscos, sb.ToString());
                 }
             }
-            catch { /* disco cheio ou arquivo aberto no Excel: tenta de novo no próximo minuto */ }
-            if (quando.Hour == 0 && quando.Minute == 0) Limpar();
+            catch { /* disco cheio ou arquivo aberto no Excel: a linha fica na fila e é gravada na próxima vez */ }
+            if (ultimaLimpeza != DateTime.Today) { Limpar(); ultimaLimpeza = DateTime.Today; }
         }
 
-        static void Acrescentar(string arquivo, string cabecalho, string texto)
+        // Campo de CSV sem separador nem quebra de linha.
+        static string Limpo(string s) { return (s ?? "").Replace(";", ",").Replace("\r", "").Replace("\n", ""); }
+
+        // Grava as linhas pendentes do arquivo (em ordem) e depois a nova; se falhar, guarda tudo na fila.
+        void Acrescentar(string arquivo, string cabecalho, string texto)
         {
+            List<string> fila;
+            if (!pendentes.TryGetValue(arquivo, out fila)) { fila = new List<string>(); pendentes[arquivo] = fila; }
+            fila.Add(texto);
+            if (fila.Count > MaxPendentes) fila.RemoveRange(0, fila.Count - MaxPendentes);
             bool novo = !File.Exists(arquivo);
             using (var w = new StreamWriter(arquivo, true, novo ? utf8Bom : new UTF8Encoding(false)))
             {
                 if (novo) w.Write(cabecalho + "\r\n");
-                w.Write(texto + "\r\n");
+                foreach (var t in fila) w.Write(t + "\r\n");
+                w.Flush();
             }
+            fila.Clear();
         }
 
         void Limpar()
@@ -149,6 +169,19 @@ namespace MonitorHW
             }
         }
 
+        // Lê com o arquivo compartilhado, para funcionar com o CSV aberto no Excel.
+        static string[] LerLinhas(string f)
+        {
+            var r = new List<string>();
+            using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var sr = new StreamReader(fs, Encoding.UTF8))
+            {
+                string s;
+                while ((s = sr.ReadLine()) != null) r.Add(s);
+            }
+            return r.ToArray();
+        }
+
         void Carregar()
         {
             var porMinuto = new Dictionary<long, Linha>();
@@ -160,7 +193,7 @@ namespace MonitorHW
                 DateTime dia;
                 if (!DateTime.TryParseExact(discos ? n.Substring(7) : n, "yyyy-MM-dd", inv, DateTimeStyles.None, out dia) || dia < limite) continue;
                 string[] conteudo;
-                try { conteudo = File.ReadAllLines(f, Encoding.UTF8); } catch { continue; }
+                try { conteudo = LerLinhas(f); } catch { continue; }
                 foreach (var linha in conteudo.Skip(1))
                 {
                     var c = linha.Split(';');

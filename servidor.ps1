@@ -457,7 +457,7 @@ function Ler-Smart {
     # temperatura e vida dos NVMe só valem por 30 min.
     $idade = ((Get-Date) - $hora).TotalMinutes
     if ($idade -gt 420) { $script:smartAta = @{}; return @{} }
-    $chave = "$($hora.Ticks)|$($script:letrasJson)"
+    $chave = "$($hora.Ticks)|$($script:letrasJson)|$($idade -gt 30)"
     if ($chave -eq $script:smartChave) { return $script:smart }
     try { $linhas = [System.IO.File]::ReadAllLines($RelatorioSmart) } catch { return $script:smart }
     $novo = @{}; $ata = @{}
@@ -1010,6 +1010,7 @@ function Verificar-Alertas($r) {
         Avaliar "disco-reserva$hw" (-not $semSmart -and -not [double]::IsNaN($d.reserva) -and -not [double]::IsNaN($d.reservaMin) -and $d.reserva -le $d.reservaMin) 1 1440 1440 'quente' `
             "SSD $lt$($d.nome): reserva esgotada" "A área reserva ($(Fmt $d.reserva) %) chegou ao mínimo do fabricante. Faça backup agora."
         $t = $script:saude[($hw -replace '^.*/', '')]
+        if ($t -and $t.nome -ne $d.nome) { $t = $null }   # número de disco reaproveitado por outro disco
         $acel = $t -and $null -ne $t.ritmo -and $null -ne $t.ritmoLongo -and $t.ritmo -ge 1 -and $t.ritmo -ge 2 * $t.ritmoLongo
         $perto = $t -and $null -ne $t.mesesAte10 -and $t.mesesAte10 -lt 18
         if ($acel -or $perto) {
@@ -1032,6 +1033,13 @@ function Verificar-Alertas($r) {
         Avaliar "disco-setores$hw" ($ilegiveis -or $cresceu) 1 10080 10080 'quente' $titulo $texto
         Avaliar "disco-idade$hw" ($d.hdd -and $d.horas -ge 40000) 1 $semana $semana 'morno' `
             "HD $lt$($d.nome): $(Fmt ($d.horas / 8760) 1) anos ligado" "$(Fmt $d.horas) horas de uso. HDs nessa idade falham com mais frequência: mantenha backup do que estiver nele."
+    }
+    # tira do sino alertas de placas e discos que sumiram (HD USB desconectado ou renumerado)
+    foreach ($k in @(@($script:ativos.Keys) + @($script:seguidas.Keys))) {
+        $m = [regex]::Match([string]$k, '^gpu-temp(.+)$')
+        $sumiu = $m.Success -and -not $r.gpus.Contains($m.Groups[1].Value)
+        if (-not $m.Success) { $m = [regex]::Match([string]$k, '^disco-[a-z]+(/(hdd|ssd|nvme)/\d+)$'); $sumiu = $m.Success -and -not $r.discos.Contains($m.Groups[1].Value) }
+        if ($sumiu) { $script:ativos.Remove($k); $script:seguidas.Remove($k) }
     }
 }
 # ---- Tendência de saúde dos discos ----
@@ -1074,7 +1082,13 @@ function Saude-Atualizar($r) {
     # retratos diários já gravados: "modelo|série" -> linhas
     $proprio = @{}
     if (Test-Path -LiteralPath $arquivoSaude) {
-        foreach ($x in @([System.IO.File]::ReadAllLines($arquivoSaude) | Select-Object -Skip 1)) {
+        # leitura compartilhada (o CSV pode estar aberto no Excel); se falhar, segue sem os retratos
+        $todas = @()
+        try {
+            $fs = New-Object System.IO.FileStream($arquivoSaude, 'Open', 'Read', 'ReadWrite')
+            try { $todas = (New-Object System.IO.StreamReader($fs, $utf8)).ReadToEnd() -split "`r?`n" } finally { $fs.Dispose() }
+        } catch { $todas = @() }
+        foreach ($x in @($todas | Select-Object -Skip 1)) {
             $c = $x -split ';'
             if ($c.Count -lt 9) { continue }
             $k = $c[2] + '|' + $c[3]
@@ -1094,17 +1108,19 @@ function Saude-Atualizar($r) {
         $pasta = $null
         if ($ata -and $ata.serie) { $pasta = Pasta-Cdi $ata.modelo $ata.serie }
         if (-not $pasta) { $pasta = Pasta-Cdi $d.nome $serie }
+        # sem série do Windows usa a do relatório SMART; sem nenhuma, o retrato sairia com chave "modelo|"
+        if (-not $serie) { if ($ata -and $ata.serie) { $serie = [string]$ata.serie } else { continue } }
         $chave = [string]$d.nome + '|' + $serie
         $semSmart = $d.temp -eq 0 -and $d.horas -eq 0
         $vida = if ($semSmart) { $NaN } else { [double]$d.vida }
-        $t = [ordered]@{ n = $n }
+        $t = [ordered]@{ n = $n; nome = [string]$d.nome }
         if ($pasta) { $t.historico = Split-Path -Leaf $pasta }
         # SSD: ritmo de desgaste (pontos de até 120 dias atrás) e média de todo o histórico
         if (-not [double]::IsNaN($vida)) {
             $pts = New-Object System.Collections.Generic.List[object]
             if ($pasta) { foreach ($p in (Serie-Cdi (Join-Path $pasta 'Life.csv'))) { $pts.Add($p) } }
             if ($proprio.ContainsKey($chave)) {
-                foreach ($c in $proprio[$chave]) { $v = 0.0; if ([double]::TryParse($c[4], [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $pts.Add(@([datetime]::ParseExact($c[0], 'yyyy-MM-dd', $inv), $v)) } }
+                foreach ($c in $proprio[$chave]) { $v = 0.0; $dt = [datetime]::MinValue; if ([datetime]::TryParseExact($c[0], 'yyyy-MM-dd', $inv, 'None', [ref]$dt) -and [double]::TryParse($c[4], [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $pts.Add(@($dt, $v)) } }
             }
             $pts.Add(@($agora, $vida))
             $ord = @($pts | Sort-Object { $_[0] })
@@ -1123,7 +1139,7 @@ function Saude-Atualizar($r) {
             $hist = New-Object System.Collections.Generic.List[object]
             if ($pasta) { foreach ($p in (Serie-Cdi (Join-Path $pasta 'ReallocatedSectorsCount.csv'))) { $hist.Add($p) } }
             if ($proprio.ContainsKey($chave)) {
-                foreach ($c in $proprio[$chave]) { $v = 0.0; if ([double]::TryParse($c[5], [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $hist.Add(@([datetime]::ParseExact($c[0], 'yyyy-MM-dd', $inv), $v)) } }
+                foreach ($c in $proprio[$chave]) { $v = 0.0; $dt = [datetime]::MinValue; if ([datetime]::TryParseExact($c[0], 'yyyy-MM-dd', $inv, 'None', [ref]$dt) -and [double]::TryParse($c[5], [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $hist.Add(@($dt, $v)) } }
             }
             # base: o valor de uns 6 meses atrás (ou o mais antigo); "subindo" se algum valor dos últimos 6 meses é menor que o atual
             $ord = @($hist | Sort-Object { $_[0] })
@@ -1320,7 +1336,7 @@ function Sessao-Iniciar([string]$hw, [string]$nome) {
     if (-not $curto) { $curto = 'gpu' }
     $arq = Join-Path $pastaSessoes ($inicio.ToString('yyyy-MM-dd_HHmmss') + '_' + $curto + '.csv')
     [System.IO.File]::WriteAllText($arq, "hora;clock_mhz;memoria_mhz;potencia_w;tensao_v;uso_pct;temp_c;vram_mb`r`n", $utf8)
-    $script:sessao = @{ hw = $hw; nome = $nome; inicio = $inicio; arquivo = $arq; amostras = (New-Object System.Collections.Generic.List[object]); viuCarga = $false; parado = 0 }
+    $script:sessao = @{ hw = $hw; nome = $nome; inicio = $inicio; arquivo = $arq; amostras = (New-Object System.Collections.Generic.List[object]); viuCarga = $false; parado = 0; emCarga = 0 }
     $script:sessaoResumo = $null
     $timerSessao.Start()
     return 'ok'
@@ -1331,11 +1347,13 @@ function Sessao-Tick {
     if (-not $s) { $timerSessao.Stop(); return }
     $v = Sessao-Leitura $s.hw
     $s.amostras.Add($v)
+    if ($v.uso -ge 90) { $s.emCarga++ }
     $linha = (Get-Date).ToString('HH:mm:ss') + ';' + (Sessao-Num $v.clock '0') + ';' + (Sessao-Num $v.mem '0') + ';' + (Sessao-Num $v.w '0.0') + ';' +
              (Sessao-Num $v.volt '0.000') + ';' + (Sessao-Num $v.uso '0') + ';' + (Sessao-Num $v.temp '0.0') + ';' + (Sessao-Num $v.vram '0')
     try { [System.IO.File]::AppendAllText($s.arquivo, $linha + "`r`n", $utf8) } catch { }
     if ($v.uso -ge 50) { $s.viuCarga = $true; $s.parado = 0 }
-    elseif ($s.viuCarga -and -not ($v.uso -ge 5)) { $s.parado++ }
+    elseif ($null -eq $v.uso -or [double]::IsNaN($v.uso)) { }   # leitura falha: não soma nem zera
+    elseif ($s.viuCarga -and $v.uso -lt 5) { $s.parado++ }
     else { $s.parado = 0 }
     if ($s.parado -ge 90) { Sessao-Parar 'a carga terminou' }
     elseif (((Get-Date) - $s.inicio).TotalHours -ge 4) { Sessao-Parar 'limite de 4 horas' }
@@ -1376,7 +1394,7 @@ function Json-Sessao {
     $o = [ordered]@{ gravando = [bool]$s; resumo = $script:sessaoResumo }
     if ($s) {
         $o.placa = $s.nome; $o.hw = $s.hw; $o.segundos = [int]((Get-Date) - $s.inicio).TotalSeconds
-        $o.amostras = $s.amostras.Count; $o.emCarga = @($s.amostras | Where-Object { $_.uso -ge 90 }).Count
+        $o.amostras = $s.amostras.Count; $o.emCarga = $s.emCarga
         $o.viuCarga = $s.viuCarga
     }
     return ConvertTo-Json -InputObject $o -Compress -Depth 3

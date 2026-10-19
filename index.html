@@ -195,6 +195,14 @@ details.hw[open] summary .chev{transform:rotate(90deg)}
 .aviso .x:hover{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--text)}
 .avisos-acoes{display:flex;justify-content:flex-end}
 .tend{font:12px/1.45 var(--mono);color:var(--muted)}
+.mais summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;min-height:28px;font-size:12px;color:var(--muted);border-radius:6px}
+.mais summary::-webkit-details-marker{display:none}
+.mais summary::before{content:'A';display:inline-block;font-size:15px;line-height:1;transition:transform .15s}
+.mais[open] summary::before{transform:rotate(90deg)}
+.mais summary:hover{color:var(--text)}
+.mais>div{margin-top:4px}
+.ponto{width:8px;height:8px;border-radius:50%;display:inline-block}
+.ponto.warm{background:var(--warm)}.ponto.hot{background:var(--hot)}
 .tend.warm{color:var(--warm)}.tend.hot{color:var(--hot)}
 .sessao{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px}
 .sessao-cab{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -1285,8 +1293,7 @@ body.compact .kpi .kv{font-size:24px}
         '<div class="badges">' + badges.join('') + '</div>' +
         (used && !off ? '<div class="track"><div style="width:' + used.value.toFixed(1) + '%;background:var(--muted)"></div></div>' : '') +
         '<div class="row mono" style="font-size:12px;color:var(--muted)"><span>' + (off ? 'sem acesso aos arquivos (desativado)' : used ? fmt(used.value) + '% ocupado' : lt ? 'espaço ocupado não informado' : 'sem volume montado') + '</span>' + (off ? '' : '<span>L ' + fmt(toMBs(r), 1) + ' · G ' + fmt(toMBs(w), 1) + ' MB/s</span>') + '</div>' +
-        linhaSaude(saude[numDisco(d.hid)], tipo) +
-        notas.map(function (n) { return '<div class="nota ' + n[0] + '">' + esc(n[1]) + '</div>'; }).join('') +
+        maisInfo(d.hid, linhaSaude(saude[numDisco(d.hid)], tipo) + notas.map(function (n) { return '<div class="nota ' + n[0] + '">' + esc(n[1]) + '</div>'; }).join('')) +
         '</div>';
     }).join('') : '<div class="empty">Nenhum disco reportado.</div>';
     // discos desativados que o LibreHardwareMonitor deixou de listar
@@ -2091,6 +2098,22 @@ body.compact .kpi .kv{font-size:24px}
     }
     return h;
   }
+  // Detalhes do disco (tendência, setores, avisos) recolhidos em "Mais informações"; um ponto colorido indica se há
+  // algo em amarelo ou vermelho lá dentro. Lembra quais estão abertos.
+  var maisAbertos = {};
+  try { maisAbertos = JSON.parse(localStorage.getItem('mh-disco-mais') || '{}'); } catch (e) {}
+  function maisInfo(chave, html) {
+    if (!html) return '';
+    var pior = /class="(?:tend|nota) hot"/.test(html) ? 'hot' : /class="(?:tend|nota) warm"/.test(html) ? 'warm' : '';
+    return '<details class="mais" data-k="' + esc(chave) + '"' + (maisAbertos[chave] ? ' open' : '') + '><summary>Mais informações' +
+      (pior ? ' <i class="ponto ' + pior + '" aria-label="' + (pior === 'hot' ? 'há um problema' : 'há um aviso') + '"></i>' : '') + '</summary><div>' + html + '</div></details>';
+  }
+  $('drives').addEventListener('toggle', function (e) {
+    var d = e.target;
+    if (!d.classList || !d.classList.contains('mais')) return;
+    if (d.open) maisAbertos[d.dataset.k] = 1; else delete maisAbertos[d.dataset.k];
+    try { localStorage.setItem('mh-disco-mais', JSON.stringify(maisAbertos)); } catch (er) {}
+  }, true);
   function tickSaude() {
     fetch('/saude', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
       if (JSON.stringify(j) === JSON.stringify(saude)) return;

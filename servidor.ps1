@@ -962,11 +962,11 @@ function Verificar-Alertas($r) {
         } else { $titulo = ''; $texto = '' }
         Avaliar "disco-desgaste$hw" ($acel -or $perto) 1 $semana $semana $(if ($perto -and $t.mesesAte10 -lt 6) { 'quente' } else { 'morno' }) $titulo $texto
         $ilegiveis = $t -and (($null -ne $t.pendentes -and $t.pendentes -gt 0) -or ($null -ne $t.incorrigiveis -and $t.incorrigiveis -gt 0))
-        $cresceu = $t -and $null -ne $t.realocadosAntes -and $null -ne $t.realocados -and $t.realocados -gt $t.realocadosAntes
+        $cresceu = $t -and $t.subindo -eq $true
         if ($ilegiveis -or $cresceu) {
             $titulo = "Disco $lt$($d.nome): setores com defeito"
             $texto = if ($ilegiveis) { "Há setores que o disco não consegue ler ($($t.pendentes) pendentes, $($t.incorrigiveis) ilegíveis). Copie agora os dados importantes dele." }
-                     else { "Os setores realocados subiram de $($t.realocadosAntes) para $($t.realocados) em 30 dias: a superfície está se degradando. Faça backup e planeje a troca." }
+                     else { "Os setores realocados subiram de $($t.realocadosAntes) para $($t.realocados) desde $(([datetime]$t.realocadosDesde).ToString('MM/yyyy')) e continuaram subindo nos últimos meses: a superfície está se degradando. Faça backup do que estiver nele e planeje a troca." }
         } else { $titulo = ''; $texto = '' }
         Avaliar "disco-setores$hw" ($ilegiveis -or $cresceu) 1 1440 1440 'quente' $titulo $texto
         Avaliar "disco-idade$hw" ($d.hdd -and $d.horas -ge 40000) 1 $semana $semana 'morno' `
@@ -1064,8 +1064,13 @@ function Saude-Atualizar($r) {
             if ($proprio.ContainsKey($chave)) {
                 foreach ($c in $proprio[$chave]) { $v = 0.0; if ([double]::TryParse($c[5], [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $hist.Add(@([datetime]::ParseExact($c[0], 'yyyy-MM-dd', $inv), $v)) } }
             }
-            $antes = @($hist | Where-Object { ($agora - $_[0]).TotalDays -ge 30 } | Sort-Object { $_[0] })
-            if ($antes.Count) { $t.realocadosAntes = $antes[-1][1] }
+            # base: o valor de uns 6 meses atrás (ou o mais antigo); "subindo" se algum valor dos últimos 6 meses é menor que o atual
+            $ord = @($hist | Sort-Object { $_[0] })
+            $base = @($ord | Where-Object { ($agora - $_[0]).TotalDays -ge 180 })
+            $base = if ($base.Count) { $base[-1] } elseif ($ord.Count) { $ord[0] } else { $null }
+            if ($base) { $t.realocadosAntes = $base[1]; $t.realocadosDesde = $base[0].ToString('yyyy-MM-dd') }
+            $t.subindo = @($ord | Where-Object { ($agora - $_[0]).TotalDays -lt 180 -and $_[1] -lt $ata.realocados }).Count -gt 0 -or
+                         ($null -ne $base -and $base[1] -lt $ata.realocados -and ($agora - $base[0]).TotalDays -lt 365)
         }
         $novo[$n] = $t
         # retrato do dia (um por disco)

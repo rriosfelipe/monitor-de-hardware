@@ -2083,10 +2083,10 @@ body.compact .kpi .kv{font-size:24px}
     }
     // setores: nos HDs sempre; nos SSDs só quando há algo a mostrar
     if (s.realocados != null && (tipo === 'HD' || s.realocados > 0 || s.pendentes > 0 || s.incorrigiveis > 0)) {
-      var cresceu = s.realocadosAntes != null && s.realocados > s.realocadosAntes;
+      var cresceu = s.subindo === true;
       var ruim = s.pendentes > 0 || s.incorrigiveis > 0 || cresceu;
       var t2 = 'Setores: ' + s.realocados + ' realocados · ' + (s.pendentes || 0) + ' pendentes · ' + (s.incorrigiveis || 0) + ' ilegíveis';
-      if (cresceu) t2 += ' (+' + (s.realocados - s.realocadosAntes) + ' em 30 dias)';
+      if (s.realocadosAntes != null && s.realocados > s.realocadosAntes) t2 += ' (+' + (s.realocados - s.realocadosAntes) + ' desde ' + mesAno(s.realocadosDesde) + ')';
       h += '<div class="tend ' + (ruim ? 'hot' : s.realocados > 0 ? 'warm' : '') + '" title="Lido pelo CrystalDiskInfo em ' + esc(s.setoresHora || '') + '">' + esc(t2) + '</div>';
     }
     return h;

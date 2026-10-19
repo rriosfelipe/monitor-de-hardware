@@ -141,7 +141,16 @@ namespace MonitorHW
             IntPtr buf = Marshal.AllocHGlobal((int)tamanho);
             try
             {
-                if (PdhGetFormattedCounterArray(counter, formato, ref tamanho, out n, buf) != 0) return r;
+                // Pode surgir uma instância entre as duas chamadas: realoca e tenta de novo (até 3 vezes).
+                uint ret = PdhGetFormattedCounterArray(counter, formato, ref tamanho, out n, buf);
+                for (int t = 0; t < 3 && ret == PDH_MORE_DATA && tamanho > 0; t++)
+                {
+                    Marshal.FreeHGlobal(buf);
+                    buf = IntPtr.Zero;
+                    buf = Marshal.AllocHGlobal((int)tamanho);
+                    ret = PdhGetFormattedCounterArray(counter, formato, ref tamanho, out n, buf);
+                }
+                if (ret != 0) return r;
                 int passo = Marshal.SizeOf(typeof(PDH_FMT_COUNTERVALUE_ITEM_DOUBLE));
                 for (int i = 0; i < n; i++)
                 {
@@ -150,7 +159,7 @@ namespace MonitorHW
                     r.Add(new KeyValuePair<string, double>(Marshal.PtrToStringUni(item.szName), item.doubleValue));
                 }
             }
-            finally { Marshal.FreeHGlobal(buf); }
+            finally { if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf); }
             return r;
         }
 
@@ -172,7 +181,10 @@ namespace MonitorHW
             var nomes = new Dictionary<int, string>();
             var cpu = new Dictionary<string, Grupo>(StringComparer.OrdinalIgnoreCase);
             var atual = new Dictionary<int, double>();
-            foreach (var p in Process.GetProcesses())
+            var todos = Process.GetProcesses();
+            try
+            {
+            foreach (var p in todos)
             {
                 try
                 {
@@ -190,6 +202,8 @@ namespace MonitorHW
                 }
                 finally { p.Dispose(); }
             }
+            }
+            finally { foreach (var q in todos) q.Dispose(); }   // libera todos mesmo se uma exceção sair do laço
             cpuAnterior = atual;
 
             // GPU: maior uso entre os motores de cada processo (3D, cópia, vídeo, computação) e VRAM dedicada,

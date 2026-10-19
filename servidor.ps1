@@ -420,7 +420,10 @@ $script:smartAta = @{}   # disco -> setores lidos do relatório (SATA e USB)
 function Ler-Smart {
     if (-not (Test-Path -LiteralPath $RelatorioSmart)) { $script:smartAta = @{}; return @{} }
     $hora = (Get-Item -LiteralPath $RelatorioSmart).LastWriteTime
-    if (((Get-Date) - $hora).TotalMinutes -gt 30) { $script:smartAta = @{}; return @{} }
+    # O relatório é gravado a cada 6 h (cada leitura acorda os HDs). Setores mudam devagar e valem por 7 h;
+    # temperatura e vida dos NVMe só valem por 30 min.
+    $idade = ((Get-Date) - $hora).TotalMinutes
+    if ($idade -gt 420) { $script:smartAta = @{}; return @{} }
     $chave = "$($hora.Ticks)|$($script:letrasJson)"
     if ($chave -eq $script:smartChave) { return $script:smart }
     try { $linhas = [System.IO.File]::ReadAllLines($RelatorioSmart) } catch { return $script:smart }
@@ -468,6 +471,7 @@ function Ler-Smart {
             }
         }
     }
+    if ($idade -gt 30) { $novo = @{} }
     $script:smart = $novo
     $script:smartAta = $ata
     $script:smartChave = $chave

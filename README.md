@@ -83,7 +83,7 @@ O `-SemLHM` evita abrir o LibreHardwareMonitor, que já inicia sozinho. Sem ele,
 Em alguns notebooks o SSD NVMe fica atrás do controlador Intel RST VMD, e o LibreHardwareMonitor devolve o SMART zerado (0 °C, 0 h ligado). O card do disco mostra então **SMART indisponível**. Para ter os valores reais:
 
 1. Instale o CrystalDiskInfo: `winget install CrystalDewWorld.CrystalDiskInfo`
-2. Rode `instalar-smart.ps1` (pede administrador uma vez). Ele cria a tarefa agendada **Monitor de Hardware - SMART**, que roda o CrystalDiskInfo em segundo plano a cada 5 minutos e regrava o relatório `DiskInfo.txt`.
+2. Rode `instalar-smart.ps1` (pede administrador uma vez). Ele cria a tarefa agendada **Monitor de Hardware - SMART**, que roda o CrystalDiskInfo em segundo plano na inicialização e a cada 6 horas (cada leitura acorda os HDs, que fazem barulho; os setores mudam devagar) e regrava o relatório `DiskInfo.txt`.
 
 O painel passa a usar esse relatório só nos discos NVMe com leitura zerada, e marca o card com **via CDI**. Um relatório com mais de 30 minutos é ignorado. Para desfazer: `instalar-smart.ps1 -Remover`.
 

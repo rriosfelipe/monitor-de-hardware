@@ -85,7 +85,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "<re
 On some laptops the NVMe SSD sits behind the Intel RST VMD controller, and LibreHardwareMonitor returns zeroed SMART data (0 °C, 0 power-on hours). The drive card then shows *SMART indisponível*. To get the real values:
 
 1. Install CrystalDiskInfo: `winget install CrystalDewWorld.CrystalDiskInfo`
-2. Run `instalar-smart.ps1` (one UAC prompt). It creates the scheduled task **Monitor de Hardware - SMART**, which runs CrystalDiskInfo in the background every 5 minutes and rewrites its `DiskInfo.txt` report.
+2. Run `instalar-smart.ps1` (one UAC prompt). It creates the scheduled task **Monitor de Hardware - SMART**, which runs CrystalDiskInfo in the background at startup and every 6 hours (each reading wakes the HDDs, which makes noise; sector counts change slowly) and rewrites its `DiskInfo.txt` report.
 
 The dashboard uses that report only for NVMe drives with a zeroed reading, and tags the card with *via CDI*. A report older than 30 minutes is ignored. To undo: `instalar-smart.ps1 -Remover`.
 

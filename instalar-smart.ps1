@@ -5,7 +5,7 @@
 
 param(
     [string]$CaminhoCDI = "$env:ProgramFiles\CrystalDiskInfo\DiskInfo64.exe",
-    [int]$Minutos = 5,
+    [int]$Minutos = 360,   # cada leitura acorda os HDs e faz barulho; setores mudam devagar
     [switch]$Remover
 )
 

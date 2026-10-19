@@ -186,21 +186,32 @@ if (-not $SemLHM -and -not (Test-Path -LiteralPath $Fonte) -and -not (Get-Proces
 # Leituras do LibreHardwareMonitor, com cache curto para o painel e o ícone não buscarem em dobro.
 $script:cacheBytes = $null
 $script:cacheHora = [datetime]::MinValue
+$script:dadosFalha = [datetime]::MinValue
+$script:dadosErro = $null
 function Obter-Dados {
     if ($script:cacheBytes -and ((Get-Date) - $script:cacheHora).TotalMilliseconds -lt 800) { return $script:cacheBytes }
-    if (Test-Path -LiteralPath $Fonte) {
-        $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Fonte))
-    } else {
-        $req = [System.Net.HttpWebRequest]::Create($Fonte)
-        $req.Timeout = 1500
-        $req.ReadWriteTimeout = 1500
-        $resp = $req.GetResponse()
-        try {
-            $ms = New-Object System.IO.MemoryStream
-            $resp.GetResponseStream().CopyTo($ms)
-            $bytes = $ms.ToArray()
-        } finally { $resp.Close() }
+    # LibreHardwareMonitor travado: cada tentativa prende a thread até o tempo-limite, então repete a falha por 3 s
+    if ($script:dadosErro -and ((Get-Date) - $script:dadosFalha).TotalSeconds -lt 3) { throw $script:dadosErro }
+    try {
+        if (Test-Path -LiteralPath $Fonte) {
+            $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Fonte))
+        } else {
+            $req = [System.Net.HttpWebRequest]::Create($Fonte)
+            $req.Timeout = 1500
+            $req.ReadWriteTimeout = 1500
+            $resp = $req.GetResponse()
+            try {
+                $ms = New-Object System.IO.MemoryStream
+                $resp.GetResponseStream().CopyTo($ms)
+                $bytes = $ms.ToArray()
+            } finally { $resp.Close() }
+        }
+    } catch {
+        $script:dadosFalha = Get-Date
+        $script:dadosErro = $_.Exception
+        throw
     }
+    $script:dadosErro = $null
     $script:cacheBytes = $bytes
     $script:cacheHora = Get-Date
     return $bytes
@@ -287,7 +298,7 @@ function Atender($ctx) {
                         Responder $res 403 'text/plain; charset=utf-8' ($utf8.GetBytes('Recusado'))
                         return
                     }
-                    try { & powercfg.exe /setactive SCHEME_BALANCED | Out-Null; $r = 'ok' } catch { $r = 'erro' }
+                    try { & powercfg.exe /setactive SCHEME_BALANCED | Out-Null; $r = if ($LASTEXITCODE -eq 0) { 'ok' } else { 'erro' } } catch { $r = 'erro' }
                     $script:planoHora = [datetime]::MinValue
                     Energia-Tick
                     Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject @{ resultado = $r } -Compress)))
@@ -335,6 +346,9 @@ function Atender($ctx) {
             }
             '/janela-aberta' {
                 if ($ctx.Request.HttpMethod -ne 'POST') { Responder $res 405 'text/plain; charset=utf-8' ($utf8.GetBytes('Use POST')); return }
+                # sem Origin é a segunda instância (Invoke-WebRequest); com Origin, só o próprio painel
+                $origem = $ctx.Request.Headers['Origin']
+                if ($origem -and $origem -ne "http://localhost:$Porta") { Responder $res 403 'text/plain; charset=utf-8' ($utf8.GetBytes('Recusado')); return }
                 Janela-Abrindo
                 Responder $res 204 'text/plain; charset=utf-8' ([byte[]]@())
             }
@@ -696,10 +710,16 @@ $timerHttp = New-Object System.Windows.Forms.Timer
 $timerHttp.Interval = 30
 $timerHttp.Add_Tick({
     try {
+        if (-not $listener.IsListening) {
+            try { $listener.Start(); $script:pedido = $listener.GetContextAsync() } catch { }
+        }
         while ($script:pedido.IsCompleted) {
-            $ctx = $script:pedido.Result
+            # a próxima espera nasce antes de ler o resultado: uma tarefa com erro não pode parar o laço
+            $tarefa = $script:pedido
             $script:pedido = $listener.GetContextAsync()
-            Atender $ctx
+            $ctx = $null
+            try { $ctx = $tarefa.Result } catch { }
+            if ($ctx) { Atender $ctx }
         }
     } catch { }
 })
@@ -743,7 +763,14 @@ $script:letrasPedidas = New-Object 'System.Collections.Generic.HashSet[string]'
 function Letras-Tick {
     $t = $script:letrasTarefa
     if ($t) {
-        if (-not $t.Handle.IsCompleted) { return }
+        if (-not $t.Handle.IsCompleted) {
+            if (((Get-Date) - $t.Inicio).TotalMinutes -lt 2) { return }
+            # consulta travada (WMI parado): desiste desta e deixa a próxima rodada tentar de novo
+            try { $t.PS.Stop() } catch { }
+            $t.PS.Dispose()
+            $script:letrasTarefa = $null
+            return
+        }
         try {
             $res = $t.PS.EndInvoke($t.Handle)
             if ($res -and $res.Count) {
@@ -789,7 +816,7 @@ function Letras-Tick {
         $ram = (Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | Measure-Object ConfiguredClockSpeed -Maximum).Maximum
         ConvertTo-Json -InputObject ([ordered]@{ letras = $m; discos = $discos; paginacao = $pag; ramFreq = [int]$ram }) -Compress -Depth 4
     })
-    $script:letrasTarefa = @{ PS = $ps; Handle = $ps.BeginInvoke() }
+    $script:letrasTarefa = @{ PS = $ps; Handle = $ps.BeginInvoke(); Inicio = Get-Date }
 }
 # "/hdd/9" -> "J:" (o número do LibreHardwareMonitor é o número do disco no Windows)
 function Letras-De([string]$hw) {
@@ -810,22 +837,28 @@ function Letras-Do-Disco([int]$n) {
 function Uso-Disco([int]$n) {
     $avisos = New-Object System.Collections.Generic.List[string]
     $lts = Letras-Do-Disco $n
-    foreach ($lt in $lts) {
-        # programas abertos a partir da unidade ou com arquivos dela na linha de comando
-        $usando = @(Get-CimInstance Win32_Process -Property Name, ExecutablePath, CommandLine -ErrorAction SilentlyContinue | Where-Object {
-            ($_.ExecutablePath -and $_.ExecutablePath -like "$lt\*") -or ($_.CommandLine -and $_.CommandLine -like "*$lt\*")
-        } | ForEach-Object { $_.Name } | Sort-Object -Unique)
-        if ($usando.Count) { $avisos.Add("Programas usando $($lt): $($usando -join ', '). Feche-os antes.") }
-        # torrents do qBittorrent salvos na unidade
+    # processos e torrents lidos uma vez só (são as partes lentas) e contados por letra no laço
+    $procs = @()
+    $salvos = @()
+    if ($lts.Count) {
+        $procs = @(Get-CimInstance Win32_Process -Property Name, ExecutablePath, CommandLine -ErrorAction SilentlyContinue)
         $bt = Join-Path $env:LOCALAPPDATA 'qBittorrent\BT_backup'
-        $qtd = 0
         foreach ($f in (Get-ChildItem -LiteralPath $bt -Filter *.fastresume -ErrorAction SilentlyContinue)) {
             try {
                 $txt = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
                 $m = [regex]::Match($txt, 'save_path(\d+):')
-                if ($m.Success -and $txt.Substring($m.Index + $m.Length, 2).ToUpper() -eq $lt) { $qtd++ }
+                if ($m.Success) { $salvos += $txt.Substring($m.Index + $m.Length, 2).ToUpper() }
             } catch { }
         }
+    }
+    foreach ($lt in $lts) {
+        # programas abertos a partir da unidade ou com arquivos dela na linha de comando
+        $usando = @($procs | Where-Object {
+            ($_.ExecutablePath -and $_.ExecutablePath -like "$lt\*") -or ($_.CommandLine -and $_.CommandLine -like "*$lt\*")
+        } | ForEach-Object { $_.Name } | Sort-Object -Unique)
+        if ($usando.Count) { $avisos.Add("Programas usando $($lt): $($usando -join ', '). Feche-os antes.") }
+        # torrents do qBittorrent salvos na unidade
+        $qtd = @($salvos | Where-Object { $_ -eq $lt }).Count
         if ($qtd) {
             if (Get-Process qbittorrent -ErrorAction SilentlyContinue) {
                 $avisos.Add("O qBittorrent está aberto e tem $qtd torrent(s) salvos em $($lt). Pause-os ou feche o qBittorrent antes, senão eles vão dar erro.")
@@ -850,7 +883,8 @@ function Iniciar-Acao([int]$n, [bool]$offline) {
     $flush = ''
     if ($offline -and $lts.Count) { $flush = 'Write-VolumeCache -DriveLetter ' + (($lts | ForEach-Object { $_.Substring(0, 1) }) -join ',') + ' -ErrorAction SilentlyContinue; ' }
     $valor = if ($offline) { '$true' } else { '$false' }
-    $cmd = "try { $flush Set-Disk -Number $n -IsOffline $valor -ErrorAction Stop; 'ok' | Set-Content -LiteralPath '$arq' -Encoding UTF8 } catch { `$_.Exception.Message | Set-Content -LiteralPath '$arq' -Encoding UTF8 }"
+    $arqEsc = $arq.Replace("'", "''")
+    $cmd = "try { $flush Set-Disk -Number $n -IsOffline $valor -ErrorAction Stop; 'ok' | Set-Content -LiteralPath '$arqEsc' -Encoding UTF8 } catch { `$_.Exception.Message | Set-Content -LiteralPath '$arqEsc' -Encoding UTF8 }"
     $enc = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($cmd))
     $base = @{ n = $n; offline = $offline; letras = ($lts -join ' '); t = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
     try {
@@ -868,7 +902,7 @@ function Acao-Tick {
     $terminou = $false
     try { $terminou = $a.proc.HasExited } catch { $terminou = Test-Path -LiteralPath $a.arquivo }
     if (-not $terminou -and ((Get-Date) - $a.inicio).TotalMinutes -lt 2) { return }
-    $r = if (Test-Path -LiteralPath $a.arquivo) { (Get-Content -LiteralPath $a.arquivo -Raw -Encoding UTF8).Trim() } else { 'Sem resposta do Windows.' }
+    $r = if (Test-Path -LiteralPath $a.arquivo) { ([string](Get-Content -LiteralPath $a.arquivo -Raw -Encoding UTF8)).Trim() } else { 'Sem resposta do Windows.' }
     $a.estado = if ($r -eq 'ok') { 'ok' } else { 'erro' }
     $a.msg = if ($r -eq 'ok') { '' } else { $r }
     $a.t = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
@@ -1382,12 +1416,20 @@ function Json-Energia {
 
 $timerLetras = New-Object System.Windows.Forms.Timer
 $timerLetras.Interval = 1500
-$timerLetras.Add_Tick({ Acao-Tick; Letras-Tick; Nvidia-Tick; Janela-Tick; Energia-Tick })
+# cada um no seu try: com Stop, um erro em um não pode parar os seguintes para sempre
+$timerLetras.Add_Tick({
+    try { Acao-Tick } catch { }
+    try { Letras-Tick } catch { }
+    try { Nvidia-Tick } catch { }
+    try { Janela-Tick } catch { }
+    try { Energia-Tick } catch { }
+})
 
 $contexto = New-Object System.Windows.Forms.ApplicationContext
 $itemSair.Add_Click({
     Sessao-Parar 'monitor fechado'
     $timerHttp.Stop(); $timerIcone.Stop(); $timerProc.Stop(); $timerLetras.Stop(); $timerSessao.Stop()
+    try { if ($script:nvidiaProc) { $script:nvidiaProc.Kill() } } catch { }
     $bandeja.Visible = $false
     $bandeja.Dispose()
 

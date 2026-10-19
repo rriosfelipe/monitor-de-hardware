@@ -1285,7 +1285,7 @@ body.compact .kpi .kv{font-size:24px}
         '<div class="badges">' + badges.join('') + '</div>' +
         (used && !off ? '<div class="track"><div style="width:' + used.value.toFixed(1) + '%;background:var(--muted)"></div></div>' : '') +
         '<div class="row mono" style="font-size:12px;color:var(--muted)"><span>' + (off ? 'sem acesso aos arquivos (desativado)' : used ? fmt(used.value) + '% ocupado' : lt ? 'espaço ocupado não informado' : 'sem volume montado') + '</span>' + (off ? '' : '<span>L ' + fmt(toMBs(r), 1) + ' · G ' + fmt(toMBs(w), 1) + ' MB/s</span>') + '</div>' +
-        linhaSaude(saude[numDisco(d.hid)]) +
+        linhaSaude(saude[numDisco(d.hid)], tipo) +
         notas.map(function (n) { return '<div class="nota ' + n[0] + '">' + esc(n[1]) + '</div>'; }).join('') +
         '</div>';
     }).join('') : '<div class="empty">Nenhum disco reportado.</div>';
@@ -2070,7 +2070,7 @@ body.compact .kpi .kv{font-size:24px}
   var MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   function mesAno(iso) { var p = String(iso || '').split('-'); return p.length < 2 ? '' : MESES[+p[1] - 1] + '/' + p[0]; }
   function prazo(m) { return m < 12 ? Math.max(1, Math.round(m)) + ' meses' : fmt(m / 12, 1) + ' anos'; }
-  function linhaSaude(s) {
+  function linhaSaude(s, tipo) {
     if (!s) return '';
     var h = '';
     if (s.ritmo != null) {
@@ -2081,7 +2081,8 @@ body.compact .kpi .kv{font-size:24px}
       if (s.mesesAte10 != null) txt += ' · ~' + prazo(s.mesesAte10) + ' até 10 %';
       h += '<div class="tend ' + cls + '" title="Calculado com o histórico do CrystalDiskInfo e o registro diário do monitor">' + esc(txt) + '</div>';
     }
-    if (s.realocados != null) {
+    // setores: nos HDs sempre; nos SSDs só quando há algo a mostrar
+    if (s.realocados != null && (tipo === 'HD' || s.realocados > 0 || s.pendentes > 0 || s.incorrigiveis > 0)) {
       var cresceu = s.realocadosAntes != null && s.realocados > s.realocadosAntes;
       var ruim = s.pendentes > 0 || s.incorrigiveis > 0 || cresceu;
       var t2 = 'Setores: ' + s.realocados + ' realocados · ' + (s.pendentes || 0) + ' pendentes · ' + (s.incorrigiveis || 0) + ' ilegíveis';

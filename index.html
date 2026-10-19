@@ -1231,21 +1231,42 @@ body.compact .kpi .kv{font-size:24px}
     setText('dlgDiscoTit', 'Desativar ' + b.dataset.nome + '?');
     $('dlgDiscoAvisos').innerHTML = '<div class="empty">Verificando se algum programa está usando o disco…</div>';
     $('dlgDisco').showModal();
+    // só escreve se a resposta ainda for do disco pedido e o diálogo continuar aberto
+    var aindaEste = function () { return discoAlvo === n && $('dlgDisco').open; };
     fetch('/disco-uso?n=' + n, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (u) {
+      if (!aindaEste()) return;
       var av = [].concat(u.avisos || []);
       $('dlgDiscoAvisos').innerHTML = av.length
         ? av.map(function (t) { return '<div class="aviso">' + icone('alerta') + '<div><span style="color:var(--text)">' + esc(t) + '</span></div></div>'; }).join('')
         : '<div class="empty">Nenhum programa parece estar usando o disco agora.</div>';
-    }).catch(function () { $('dlgDiscoAvisos').innerHTML = ''; });
+    }).catch(function () { if (aindaEste()) $('dlgDiscoAvisos').innerHTML = '<div class="empty">Não foi possível verificar os programas que usam o disco.</div>'; });
   });
   $('dlgDiscoCancelar').addEventListener('click', function () { $('dlgDisco').close(); });
   $('dlgDiscoOk').addEventListener('click', function () { $('dlgDisco').close(); if (discoAlvo != null) pedirDisco(discoAlvo, true); });
 
   function anos(h) { return h >= 8760 ? fmt(h / 8760, 1) + ' anos' : fmt(h) + ' h'; }
+  // A lista de discos é refeita a cada leitura. Não troca o HTML no meio de um clique (o clique se perderia),
+  // nem quando nada mudou, e devolve o foco do teclado ao mesmo botão depois de trocar.
+  var drivesHtml = '', drivesPressionado = 0;
+  $('drives').addEventListener('pointerdown', function () { drivesPressionado = Infinity; });
+  ['pointerup', 'pointercancel'].forEach(function (ev) {
+    document.addEventListener(ev, function () { if (drivesPressionado === Infinity) drivesPressionado = Date.now() + 300; });
+  });
+  function escreverDrives(html) {
+    if (html === drivesHtml || Date.now() < drivesPressionado) return;
+    var box = $('drives'), foco = document.activeElement, alvo = null;
+    if (foco && box.contains(foco)) {
+      if (foco.dataset && foco.dataset.discoAcao) alvo = '[data-disco-acao][data-n="' + foco.dataset.n + '"]';
+      else if (foco.tagName === 'SUMMARY' && foco.parentNode.dataset.k) alvo = 'details.mais[data-k="' + CSS.escape(foco.parentNode.dataset.k) + '"] > summary';
+    }
+    box.innerHTML = html;
+    drivesHtml = html;
+    if (alvo) { var el = box.querySelector(alvo); if (el) el.focus(); }
+  }
   function renderDrives(hws) {
     var disks = family(hws, 'disk');
     var quente = null;
-    $('drives').innerHTML = disks.length ? disks.map(function (d) {
+    var htmlDrives = disks.length ? disks.map(function (d) {
       var t = find(d, 'Temperature', /^composite temperature$/i) || find(d, 'Temperature', /^temperature$/i) || sensorsOf(d, 'Temperature')[0];
       var used = find(d, 'Load', /used space/i);
       var r = find(d, 'Throughput', /read/i), w = find(d, 'Throughput', /write/i);
@@ -1308,10 +1329,11 @@ body.compact .kpi .kv{font-size:24px}
     Object.keys(estDiscos).forEach(function (k) {
       var est = estDiscos[k];
       if (!est.offline || vistos[k]) return;
-      $('drives').insertAdjacentHTML('beforeend', '<div class="disco off"><div class="row"><span class="k" style="color:var(--text)">' + (letrasUltimas[k] ? '<span class="letra">' + esc(letrasUltimas[k]) + '</span>' : '') + esc(est.nome) + '</span><span class="mono" style="color:var(--muted)">—</span></div>' +
+      htmlDrives += ('<div class="disco off"><div class="row"><span class="k" style="color:var(--text)">' + (letrasUltimas[k] ? '<span class="letra">' + esc(letrasUltimas[k]) + '</span>' : '') + esc(est.nome) + '</span><span class="mono" style="color:var(--muted)">—</span></div>' +
         '<div class="badges"><span class="badge">HD externo</span><span class="badge warm">desativado</span>' + botaoDisco(est, est.nome, '') + '</div>' +
         '<div class="nota" style="color:var(--muted)">Desativado no Windows: sem letra e sem acesso aos arquivos até ser ativado.</div></div>');
     });
+    escreverDrives(htmlDrives);
     setText('kDiskT', quente ? fmtT(quente.t) : '—');
     $('kDiskT').style.color = quente ? toneDisco(quente.t) : '';
     setText('kDiskN', quente ? quente.nome : '—');
@@ -1352,7 +1374,7 @@ body.compact .kpi .kv{font-size:24px}
       r.bar.style.width = Math.min(100, f.v / f.max * 100).toFixed(0) + '%';
       // rotação simbólica: 3000 RPM = 1 volta/s; parada se 0
       var dur = f.v > 0 ? Math.max(0.25, 3000 / f.v) : 0;
-      if (!dur) { r.ic.style.animationPlayState = 'paused'; }
+      if (!dur) { r.ic.style.animationPlayState = 'paused'; r.dur = 0; }
       else if (!r.dur || Math.abs(dur - r.dur) / r.dur > 0.15) { r.ic.style.animationDuration = dur.toFixed(2) + 's'; r.ic.style.animationPlayState = 'running'; r.dur = dur; }
     });
     Object.keys(fanRows).forEach(function (k) { if (!vistos[k]) { fanRows[k].el.remove(); delete fanRows[k]; } });
@@ -1365,7 +1387,12 @@ body.compact .kpi .kv{font-size:24px}
       return { name: n.top, dl: toMBs(dl) * 8, ul: toMBs(ul) * 8, act: (tot ? tot.value : 0) + (dl ? dl.value : 0) };
     });
     var somaD = 0, somaU = 0;
-    todas.forEach(function (n) { if (!isNaN(n.dl)) somaD += n.dl; if (!isNaN(n.ul)) somaU += n.ul; });
+    // placas virtuais repetem o tráfego da física: ficam fora do total
+    todas.forEach(function (n) {
+      if (/vEthernet|Hyper-V|WSL|Loopback|Virtual/i.test(n.name || '')) return;
+      if (!isNaN(n.dl)) somaD += n.dl;
+      if (!isNaN(n.ul)) somaU += n.ul;
+    });
     setText('kNetD', fmt(somaD, 1)); setText('kNetU', fmt(somaU, 1));
     var nics = todas.filter(function (n) { return n.act > 0; }).sort(function (a, b) { return b.act - a.act; }).slice(0, 2);
     $('net').innerHTML = nics.length ? nics.map(function (n) {
@@ -1595,9 +1622,13 @@ body.compact .kpi .kv{font-size:24px}
     setText('status', text);
   }
 
+  var tickEmVoo = false;
   function tick() {
-    if (paused) return;
-    fetch('/dados', { cache: 'no-store' }).then(function (r) {
+    if (paused || tickEmVoo) return;   // a leitura anterior ainda não voltou
+    tickEmVoo = true;
+    var ctl = window.AbortController ? new AbortController() : null;
+    var prazo = ctl ? setTimeout(function () { ctl.abort(); }, 5000) : null;
+    fetch('/dados', { cache: 'no-store', signal: ctl ? ctl.signal : undefined }).then(function (r) {
       return r.json().then(function (j) { return { ok: r.ok, j: j }; });
     }).then(function (res) {
       if (!res.ok || res.j.erro) throw new Error(res.j.erro || 'erro');
@@ -1612,7 +1643,7 @@ body.compact .kpi .kv{font-size:24px}
       setText('alertDetail', location.protocol === 'file:'
         ? 'Esta página foi aberta direto do arquivo. Use o atalho "Monitor de Hardware" para abri-la pelo servidor local.'
         : 'Detalhe: ' + e.message);
-    });
+    }).then(function () { tickEmVoo = false; clearTimeout(prazo); });
   }
 
   $('btnPause').addEventListener('click', function () {
@@ -1746,7 +1777,7 @@ body.compact .kpi .kv{font-size:24px}
   }
 
   // ---------- gravar sessão (o servidor grava; aqui só comanda e mostra)
-  var sessaoEstado = null, sessaoT = null;
+  var sessaoEstado = null, sessaoT = null, sessaoGer = 0, sessaoPedindo = false, sessaoErro = null;
   function mmss(s) {
     s = Math.max(0, Math.round(s || 0));
     var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
@@ -1758,13 +1789,14 @@ body.compact .kpi .kv{font-size:24px}
   function desenharSessao(j) {
     sessaoEstado = j;
     var b = $('btnSessao');
-    b.disabled = false;
+    b.disabled = sessaoPedindo;
     b.textContent = j.gravando ? 'Parar' : 'Gravar';
     b.classList.toggle('gravando', !!j.gravando);
     $('sessaoSt').textContent = j.gravando
       ? 'Gravando ' + nomeCurto(j.placa) + ' · ' + mmss(j.segundos) + ' · ' + mmss(j.emCarga) + ' em carga · ' +
         (j.viuCarga ? 'para sozinha 90 s depois que a carga terminar' : 'aguardando a carga começar')
       : 'Registra clock, potência, tensão, uso e VRAM da placa selecionada a cada segundo durante um teste.';
+    if (sessaoErro && Date.now() < sessaoErro.ate) $('sessaoSt').textContent = sessaoErro.txt;
     var r = j.resumo, box = $('sessaoResumo');
     box.hidden = !r || !!j.gravando;
     if (!r || j.gravando) return;
@@ -1779,22 +1811,27 @@ body.compact .kpi .kv{font-size:24px}
         tileS('Temp. máx. · VRAM máx.', (r.tempMax == null ? '—' : fmtT(r.tempMax) + un()) + ' · ' + (r.vramMax == null ? '—' : nn(r.vramMax / 1024, 1) + ' GB')) +
         '</div>' : '<div class="sessao-st">A placa não chegou a 90% de uso durante a gravação; os dados estão no arquivo.</div>');
   }
+  // só a consulta mais recente rearma o timer (senão um clique no meio de uma consulta criaria duas cadeias)
   function tickSessao() {
     clearTimeout(sessaoT);
+    var g = ++sessaoGer;
     fetch('/sessao', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+      if (g !== sessaoGer) return;
       desenharSessao(j);
       sessaoT = setTimeout(tickSessao, j.gravando ? 1000 : 5000);
-    }).catch(function () { sessaoT = setTimeout(tickSessao, 5000); });
+    }).catch(function () { if (g === sessaoGer) sessaoT = setTimeout(tickSessao, 5000); });
   }
   $('btnSessao').addEventListener('click', function () {
     var b = this, gravando = sessaoEstado && sessaoEstado.gravando;
     if (!gravando && !gpuAtual) return;
     b.disabled = true;
+    sessaoPedindo = true;
     var corpo = gravando ? { acao: 'parar' } : { acao: 'iniciar', hw: gpuAtual.hid, nome: gpuAtual.nome };
     fetch('/sessao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
       .then(function (r) { return r.json(); })
-      .then(function (r) { if (r.resultado !== 'ok') $('sessaoSt').textContent = 'Não foi possível: ' + r.resultado; })
-      .catch(function () {}).then(function () { b.disabled = false; tickSessao(); });
+      .then(function (r) { if (r.resultado !== 'ok') sessaoErro = { txt: 'Não foi possível: ' + r.resultado, ate: Date.now() + 8000 }; })
+      .catch(function () { sessaoErro = { txt: 'Não foi possível falar com o monitor.', ate: Date.now() + 8000 }; })
+      .then(function () { sessaoPedindo = false; b.disabled = false; tickSessao(); });
   });
   $('sessao').addEventListener('click', function (e) {
     if (e.target.id === 'btnSessaoPasta') fetch('/abrir-sessoes', { method: 'POST' }).catch(function () {});
@@ -1893,6 +1930,7 @@ body.compact .kpi .kv{font-size:24px}
   function desenharRegistro() {
     var d = regDados;
     if (!d || d.erro) { setText('rgNota', d && d.erro ? d.erro : 'Registro indisponível.'); return; }
+    d.pontos = d.pontos || []; d.discos = d.discos || []; d.resumo = d.resumo || {};
     var fim = Date.now(), ini = d.inicio, passo = d.passoMin * 60000;
     var col = function (i) { return d.pontos.map(function (p) { return [p[0], p[i]]; }); };
     var temp = function (v) { return fmt(tC(v), 0) + ' ' + un(); };
@@ -2175,6 +2213,13 @@ body.compact .kpi .kv{font-size:24px}
 
   // ---------- janela de cores: pré-visualiza ao vivo e salva no servidor (vale também para o ícone da bandeja)
   var dlg = $('dlgCores'), rascunho = null;
+  // enquanto o diálogo está aberto, todo redesenho (inclusive o de cada segundo) usa o rascunho
+  var renderSalvo = render;
+  render = function (d, r) {
+    var salvo = cfg;
+    if (rascunho && dlg.open) cfg = rascunho;
+    try { return renderSalvo(d, r); } finally { cfg = salvo; }
+  };
   function redesenhar() { if (last) render(last, true); if (regDados) desenharRegistro(); }
   function preencher(c) {
     dlg.querySelectorAll('[data-k]').forEach(function (el) { if (el.type === 'checkbox') el.checked = !!c[el.dataset.k]; else el.value = c[el.dataset.k]; });
@@ -2195,7 +2240,9 @@ body.compact .kpi .kv{font-size:24px}
   }
   function previa() {
     aplicarCores(rascunho);
-    var salvo = cfg; cfg = rascunho; redesenhar(); cfg = salvo;
+    var salvo = cfg;
+    cfg = rascunho;
+    try { redesenhar(); } finally { cfg = salvo; }
     validar(rascunho);
   }
   TEMAS.forEach(function (t) {
@@ -2254,6 +2301,9 @@ body.compact .kpi .kv{font-size:24px}
         if (p[3 + 2 * i] == null && p[4 + 2 * i] == null) return;
         (hist.gpus[id] || (hist.gpus[id] = [])).push({ t: p[0], temp: n(p[3 + 2 * i]), load: n(p[4 + 2 * i]) });
       });
+    });
+    [hist.cpu].concat(Object.keys(hist.gpus).map(function (k) { return hist.gpus[k]; })).forEach(function (a) {
+      if (a.length > HIST_MAX) a.splice(0, a.length - HIST_MAX);
     });
   }).catch(function () {}).then(function () {
     tick();

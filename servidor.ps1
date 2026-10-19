@@ -884,6 +884,8 @@ function Avaliar([string]$chave, [bool]$cond, [int]$leituras, [double]$minEntre,
     if ($n -lt $leituras) { return }
     $desde = if ($script:ativos[$chave]) { $script:ativos[$chave].desde } else { (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss') }
     $script:ativos[$chave] = [ordered]@{ chave = $chave; nivel = $nivel; titulo = $titulo; texto = $texto; desde = $desde }
+    # alertas crônicos (desgaste e idade dos discos) ficam só no sino do painel, sem notificação do Windows
+    if ($chave -match '^disco-(vida|idade)' -or ($chave -match '^disco-desgaste' -and $nivel -ne 'quente')) { return }
     $ultimo = $script:estado[$chave]
     $espera = if ($n -eq $leituras) { $minEntre } else { $minRepetir }
     if ($ultimo -and ((Get-Date) - $ultimo).TotalMinutes -lt $espera) { return }

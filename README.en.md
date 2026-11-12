@@ -25,6 +25,7 @@ It is built on top of [LibreHardwareMonitor](https://github.com/LibreHardwareMon
 - **Tray icon.** Shows the hotter of CPU and GPU (the hottest GPU if there are several), colored by temperature band. A thin stripe under the number tells you which one it is: blue for CPU, purple for GPU. You can switch it to CPU only, GPU only or alternating.
 - **Per-program usage.** The programs using the most CPU (with RAM) and the most GPU (with engine type and VRAM). Same data sources as Task Manager.
 - **Programs per card.** With more than one GPU, the list shows only the programs running on the card picked in the selector (Windows reports which card each program uses).
+- **Loaded AI models.** On the GPU card, the models Ollama (one or more instances) and `llama-server` have loaded on that card: name, parameters, quantization, context, VRAM used and an estimate of the KV cache. Each model is tied to a card through the processes holding its VRAM. Idea inspired by [gputaskman](https://github.com/shanselman/gputaskman).
 - **Session recording.** The "Gravar" button on the GPU card records the selected card's clock, power, voltage, load, temperature and VRAM every second into a CSV in `registros/sessoes/`. It stops by itself 90 s after the load ends (or with the button) and shows a summary: time under load, average/min/max clock, how long it stayed below 75 % of the peak, power, voltage, temperature and VRAM.
 - **Alerts** as Windows notifications, with cooldowns:
 
@@ -172,6 +173,7 @@ Files created at runtime, kept out of git by `.gitignore`:
 | `GET /memoria` | Configured RAM speed, as reported by Windows |
 | `GET /smart` | SMART read by CrystalDiskInfo, per disk number |
 | `GET /gpus` | Graphics cards and their real VRAM size |
+| `GET /modelos` | AI models loaded in Ollama and `llama-server`, with the PIDs holding VRAM |
 | `GET /saude` | Health trend of each drive: SSD wear rate and HDD sector counts |
 | `GET/POST /energia` | Active power plan (name, whether it is a high-performance one, when and by which program it was changed); POST switches back to Balanced |
 | `GET/POST /sessao` | Session recording state and last summary; starts or stops a recording |

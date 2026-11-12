@@ -45,6 +45,7 @@ namespace MonitorHW
             public string Motor;
             public double MotorPct;
             public string Placa;
+            public List<int> Pids = new List<int>();
         }
 
         // ---- Placas de vídeo pelo LUID (o mesmo que aparece nos contadores de GPU), via DXGI ----
@@ -230,6 +231,7 @@ namespace MonitorHW
                 string placa = Placa(luid);
                 if (!gpu.TryGetValue(nome + "|" + placa, out g)) { g = new Grupo { Nome = nome, Placa = placa }; gpu[nome + "|" + placa] = g; }
                 g.Qtd++;
+                if (!g.Pids.Contains(pid)) g.Pids.Add(pid);
                 pidsGpu[chavePid] = g;
                 return g;
             };
@@ -285,7 +287,12 @@ namespace MonitorHW
                 sb.Append("{\"nome\":\"").Append(Escapar(g.Nome)).Append("\",\"qtd\":").Append(g.Qtd)
                   .Append(",\"pct\":").Append(Math.Min(100, g.Pct).ToString("0.0", inv))
                   .Append(",\"memMB\":").Append(g.MemMB.ToString("0", inv));
-                if (ehGpu) sb.Append(",\"motor\":\"").Append(Escapar(g.Motor ?? "")).Append("\",\"placa\":\"").Append(Escapar(g.Placa ?? "")).Append('"');
+                if (ehGpu)
+                {
+                    sb.Append(",\"motor\":\"").Append(Escapar(g.Motor ?? "")).Append("\",\"placa\":\"").Append(Escapar(g.Placa ?? "")).Append("\",\"pids\":[");
+                    for (int k = 0; k < g.Pids.Count; k++) { if (k > 0) sb.Append(','); sb.Append(g.Pids[k]); }
+                    sb.Append(']');
+                }
                 sb.Append('}');
             }
             sb.Append(']');

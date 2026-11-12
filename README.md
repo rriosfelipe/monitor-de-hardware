@@ -23,6 +23,7 @@ Quem lê os sensores é o [LibreHardwareMonitor](https://github.com/LibreHardwar
 - **Ícone na bandeja.** Mostra a temperatura mais alta entre CPU e GPU (a mais quente, se houver várias), na cor da faixa de temperatura. Uma faixinha embaixo do número indica de quem ele é: azul para CPU, roxa para GPU. Dá para trocar para só CPU, só GPU ou alternar entre as duas.
 - **Uso por programa.** Os programas que mais usam a CPU (com a RAM de cada um) e a GPU (com o tipo de trabalho e a VRAM). As fontes são as mesmas do Gerenciador de Tarefas.
 - **Programas por placa.** Com mais de uma GPU, a lista mostra só os programas da placa escolhida no seletor (o Windows informa em qual placa cada programa está).
+- **Modelos de IA carregados.** No cartão da GPU, os modelos que o Ollama (uma ou mais instâncias) e o `llama-server` têm carregados naquela placa: nome, parâmetros, quantização, contexto, VRAM ocupada e uma estimativa do cache KV. A placa de cada modelo vem dos processos que seguram a VRAM. Ideia inspirada no [gputaskman](https://github.com/shanselman/gputaskman).
 - **Gravar sessão.** O botão "Gravar" no cartão da GPU registra clock, potência, tensão, uso, temperatura e VRAM da placa selecionada a cada segundo, num CSV em `registros/sessoes/`. Para sozinho 90 s depois que a carga termina (ou pelo botão) e mostra o resumo: tempo em carga, clock médio, mínimo e máximo, quanto tempo ficou abaixo de 75 % do pico, potência, tensão, temperatura e VRAM.
 - **Alertas** por notificação do Windows:
 
@@ -170,6 +171,7 @@ Arquivos criados durante o uso, deixados fora do git pelo `.gitignore`:
 | `GET /memoria` | Velocidade configurada da RAM, informada pelo Windows |
 | `GET /smart` | SMART lido pelo CrystalDiskInfo, por número de disco |
 | `GET /gpus` | Placas de vídeo e o tamanho real da VRAM de cada uma |
+| `GET /modelos` | Modelos de IA carregados no Ollama e no `llama-server`, com os PIDs que seguram a VRAM |
 | `GET /saude` | Tendência de saúde de cada disco: ritmo de desgaste dos SSDs e setores dos HDs |
 | `GET/POST /energia` | Plano de energia ativo (nome, se é de alto desempenho, quando e por qual programa foi trocado); o POST volta ao Equilibrado |
 | `GET/POST /sessao` | Estado da gravação de sessão e resumo da última; inicia ou para a gravação |

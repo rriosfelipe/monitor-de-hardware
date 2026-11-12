@@ -401,6 +401,10 @@ function Atender($ctx) {
                 } catch { }
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes((ConvertTo-Json -InputObject $lista -Compress)))
             }
+            '/modelos' {
+                $script:modelosPedido = Get-Date
+                Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes($script:modelosJson))
+            }
             '/nvidia' {
                 $script:nvidiaPedido = Get-Date
                 Responder $res 200 'application/json; charset=utf-8' ($utf8.GetBytes($script:nvidiaJson))
@@ -1281,6 +1285,111 @@ function Nvidia-Num([string]$s) {
     if ([double]::TryParse($s, [System.Globalization.NumberStyles]::Float, [cultureinfo]::InvariantCulture, [ref]$v)) { return [int][math]::Round($v) }
     return $null
 }
+# ---- Modelos de IA carregados (Ollama, uma ou mais instâncias, e llama-server): nome, tamanho, quantização,
+# contexto, VRAM e cache KV estimado, mais os PIDs que seguram a VRAM (o painel liga o modelo à placa por eles).
+# Linha de comando dos processos e consultas HTTP levam até alguns segundos: roda em segundo plano, a cada 10 s
+# e só enquanto o painel está pedindo.
+$script:modelosJson = '[]'
+$script:modelosTarefa = $null
+$script:modelosHora = [datetime]::MinValue
+$script:modelosPedido = [datetime]::MinValue
+function Modelos-Tick {
+    $t = $script:modelosTarefa
+    if ($t) {
+        if (-not $t.Handle.IsCompleted) {
+            if (((Get-Date) - $t.Inicio).TotalSeconds -gt 60) { try { $t.PS.Stop() } catch { }; $t.PS.Dispose(); $script:modelosTarefa = $null }
+            return
+        }
+        try { $r = $t.PS.EndInvoke($t.Handle); if ($r -and $r.Count) { $script:modelosJson = [string]$r[0] } } catch { }
+        $t.PS.Dispose(); $script:modelosTarefa = $null
+        return
+    }
+    if (((Get-Date) - $script:modelosPedido).TotalSeconds -gt 30) { return }
+    if (((Get-Date) - $script:modelosHora).TotalSeconds -lt 10) { return }
+    $script:modelosHora = Get-Date
+    $ps = [PowerShell]::Create()
+    [void]$ps.AddScript({
+        $ErrorActionPreference = 'Stop'
+        $inv = [cultureinfo]::InvariantCulture
+        function Http([string]$url, [string]$corpo) {
+            $req = [System.Net.HttpWebRequest]::Create($url)
+            $req.Timeout = 3000; $req.ReadWriteTimeout = 3000
+            if ($corpo) {
+                $req.Method = 'POST'; $req.ContentType = 'application/json'
+                $b = [Text.Encoding]::UTF8.GetBytes($corpo); $req.ContentLength = $b.Length
+                $s = $req.GetRequestStream(); $s.Write($b, 0, $b.Length); $s.Close()
+            }
+            $resp = $req.GetResponse()
+            try { return (New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8)).ReadToEnd() | ConvertFrom-Json } finally { $resp.Close() }
+        }
+        function Quant([string]$nome) {
+            $m = [regex]::Match($nome, '(?i)(IQ\d_[A-Z0-9_]+|Q\d_K(_[SML])?|Q\d_\d|BF16|F16|F32|Q\d)(?=[^A-Za-z0-9]|$)')
+            if ($m.Success) { return $m.Value.ToUpper() } return ''
+        }
+        $procs = @(Get-CimInstance Win32_Process -Filter "Name='ollama.exe' OR Name='llama-server.exe'" -ErrorAction SilentlyContinue)
+        $lista = @()
+        # bytes por valor do cache KV conforme o tipo (--cache-type-k/-v do runner)
+        function BytesKv([string]$tipo) { switch -regex ($tipo) { '^q4' { 0.5625 } '^q5' { 0.6875 } '^q8' { 1.0625 } '^f32' { 4 } default { 2 } } }
+        function Arg([string]$cl, [string]$nome) { $m = [regex]::Match($cl, '(?:^|\s)' + $nome + '\s+("([^"]+)"|(\S+))'); if (-not $m.Success) { return '' }; if ($m.Groups[2].Value) { return $m.Groups[2].Value }; return $m.Groups[3].Value }
+        # ---- Ollama: as instâncias escutam em 11434 e vizinhas (sem administrador o Windows não diz o dono da porta);
+        # cada modelo carregado roda num llama-server filho da instância, que cita o arquivo do modelo
+        $portas = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -ge 11434 -and $_.LocalPort -le 11444 } | ForEach-Object { [int]$_.LocalPort })
+        $hostEnv = [Environment]::GetEnvironmentVariable('OLLAMA_HOST', 'User'); if (-not $hostEnv) { $hostEnv = [Environment]::GetEnvironmentVariable('OLLAMA_HOST', 'Machine') }
+        if ($hostEnv -match ':(\d+)$') { $portas += [int]$Matches[1] }
+        $runners = @($procs | Where-Object { $_.Name -eq 'llama-server.exe' -and ($procs | Where-Object { $_.Name -eq 'ollama.exe' }).ProcessId -contains $_.ParentProcessId })
+        foreach ($porta in @($portas | Sort-Object -Unique)) {
+            try { $ps = Http "http://127.0.0.1:$porta/api/ps" $null } catch { continue }
+            if ($null -eq $ps.models) { continue }
+            foreach ($m in @($ps.models)) {
+                $d = $m.details
+                $item = [ordered]@{ fonte = 'Ollama'; porta = $porta; nome = [string]$m.name; params = [string]$d.parameter_size
+                                    quant = [string]$d.quantization_level; tamanhoGB = [math]::Round([double]$m.size / 1GB, 1)
+                                    vramGB = [math]::Round([double]$m.size_vram / 1GB, 1); contexto = $m.context_length; expira = [string]$m.expires_at; pids = @() }
+                try {
+                    $show = Http "http://127.0.0.1:$porta/api/show" (ConvertTo-Json @{ model = $item.nome } -Compress)
+                    $blob = [regex]::Match([string]$show.modelfile, '(?m)^FROM\s+(\S*sha256-[0-9a-f]+)').Groups[1].Value
+                    $hash = [regex]::Match($blob, 'sha256-[0-9a-f]+').Value
+                    $runner = @($runners | Where-Object { $hash -and ([string]$_.CommandLine).Contains($hash) }) | Select-Object -First 1
+                    if ($runner) {
+                        $item.pids = @([int]$runner.ProcessId, [int]$runner.ParentProcessId)
+                        $cl = [string]$runner.CommandLine
+                        $ck = Arg $cl '--cache-type-k'; $cv = Arg $cl '--cache-type-v'
+                        $item.cacheTipo = if ($ck) { $ck } else { 'f16' }
+                        $c = Arg $cl '-c'; if ($c -match '^\d+$') { $item.contexto = [int]$c }
+                    }
+                    # cache KV = camadas x contexto x cabeças KV x (dim. da chave x bytes da chave + dim. do valor x bytes do valor)
+                    $info = $show.model_info
+                    $arq = [string]$info.'general.architecture'
+                    $camadas = [double]$info."$arq.block_count"; $kv = [double]$info."$arq.attention.head_count_kv"
+                    $dk = [double]$info."$arq.attention.key_length"; $dv = [double]$info."$arq.attention.value_length"
+                    if (-not $dk -and $info."$arq.attention.head_count") { $dk = [double]$info."$arq.embedding_length" / [double]$info."$arq.attention.head_count" }
+                    if (-not $dv) { $dv = $dk }
+                    $ctx = [double]$item.contexto
+                    if ($camadas -and $kv -and $dk -and $ctx) {
+                        $bk = BytesKv $(if ($runner) { $ck } else { '' }); $bv = BytesKv $(if ($runner) { $cv } else { '' })
+                        $item.kvGB = [math]::Round($camadas * $ctx * $kv * ($dk * $bk + $dv * $bv) / 1GB, 2)
+                    }
+                } catch { }
+                $lista += $item
+            }
+        }
+        $usados = @($lista | ForEach-Object { $_.pids } | Where-Object { $_ })
+        # ---- llama-server: modelo e contexto pela linha de comando
+        foreach ($p in @($procs | Where-Object { $_.Name -eq 'llama-server.exe' -and $runners.ProcessId -notcontains $_.ProcessId })) {
+            $cl = [string]$p.CommandLine
+            $mm = [regex]::Match($cl, '(?:^|\s)(?:-m|--model)\s+("([^"]+)"|(\S+))')
+            $arquivo = if ($mm.Success) { if ($mm.Groups[2].Value) { $mm.Groups[2].Value } else { $mm.Groups[3].Value } } else { '' }
+            $mc = [regex]::Match($cl, '(?:^|\s)(?:-c|--ctx-size)\s+(\d+)')
+            $item = [ordered]@{ fonte = 'llama-server'; nome = $(if ($arquivo) { [IO.Path]::GetFileNameWithoutExtension($arquivo) } else { 'llama-server' })
+                                quant = (Quant $arquivo); contexto = $(if ($mc.Success) { [int]$mc.Groups[1].Value } else { $null }); pids = @([int]$p.ProcessId) }
+            try { if ($arquivo -and (Test-Path -LiteralPath $arquivo)) { $item.tamanhoGB = [math]::Round((Get-Item -LiteralPath $arquivo).Length / 1GB, 1) } } catch { }
+            $lista += $item
+        }
+        ConvertTo-Json -InputObject @($lista) -Compress -Depth 4
+    })
+    $script:modelosTarefa = @{ PS = $ps; Handle = $ps.BeginInvoke(); Inicio = Get-Date }
+}
+
 function Nvidia-Tick {
     if (-not $script:nvidiaExe) { return }
     $p = $script:nvidiaProc
@@ -1458,6 +1567,7 @@ $timerLetras.Add_Tick({
     try { Nvidia-Tick } catch { }
     try { Janela-Tick } catch { }
     try { Energia-Tick } catch { }
+    try { Modelos-Tick } catch { }
 })
 
 $contexto = New-Object System.Windows.Forms.ApplicationContext

@@ -194,6 +194,11 @@ details.hw[open] summary .chev{transform:rotate(90deg)}
 .aviso .x{flex-shrink:0;min-height:36px;min-width:36px;padding:0;margin:-6px -8px -6px 0;border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;border-radius:8px}
 .aviso .x:hover{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--text)}
 .avisos-acoes{display:flex;justify-content:flex-end}
+.modelo{padding:10px 12px;border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;gap:4px}
+.modelo+.modelo{margin-top:8px}
+.modelo .mt{display:flex;justify-content:space-between;gap:12px;font-size:14px;font-weight:600}
+.modelo .mt span:last-child{font:500 13px var(--mono);color:var(--accent);flex-shrink:0}
+.modelo .md{font:12px/1.5 var(--mono);color:var(--muted)}
 .tend{font:12px/1.45 var(--mono);color:var(--muted)}
 .mais summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;min-height:28px;font-size:12px;color:var(--muted);border-radius:6px}
 .mais summary::-webkit-details-marker{display:none}
@@ -477,6 +482,7 @@ body.compact .kpi .kv{font-size:24px}
         </div>
         <div id="sessaoResumo" hidden></div>
       </div>
+      <div id="gpuModelos" hidden style="margin-bottom:16px"><div class="lbl" style="margin-bottom:8px">Modelos de IA carregados</div><div id="gpuModelosLista"></div></div>
       <div class="lbl" style="margin-bottom:8px" id="gpuProcsLbl">Programas usando a placa de vídeo</div>
       <div class="proc-head" aria-hidden="true"><span>Programa</span><span></span><span>GPU</span><span>VRAM</span></div>
       <div class="procs" id="gpuProcs"><div class="empty">Carregando…</div></div>
@@ -1786,7 +1792,43 @@ body.compact .kpi .kv{font-size:24px}
     if (varias && gpuAtual) lista = lista.filter(function (p) { return !p.placa || p.placa === gpuAtual.nome; });
     $('gpuProcs').innerHTML = lista.length ? lista.slice(0, 6).map(function (p) { return linhaProc(p, nomeMotor(p.motor)); }).join('')
       : '<div class="empty">Nenhum programa usando ' + (varias ? 'esta placa' : 'a GPU') + '.</div>';
+    desenharModelos();
   }
+
+  // ---------- modelos de IA carregados (o servidor pergunta ao Ollama e lê a linha de comando do llama-server)
+  // A placa de cada modelo vem dos processos: os PIDs do modelo que seguram VRAM nesta placa.
+  var modelos = [];
+  function desenharModelos() {
+    var varias = !$('gpuSel').hidden, procs = (ultimoProc && ultimoProc.gpu) || [];
+    var daPlaca = function (m) {
+      if (!varias || !gpuAtual) return true;
+      return procs.some(function (p) { return p.placa === gpuAtual.nome && (p.pids || []).some(function (id) { return (m.pids || []).indexOf(id) >= 0; }); });
+    };
+    var lista = modelos.filter(daPlaca);
+    $('gpuModelos').hidden = !lista.length;
+    $('gpuModelosLista').innerHTML = lista.map(function (m) {
+      var outras = varias ? procs.filter(function (p) {
+        return p.placa && (!gpuAtual || p.placa !== gpuAtual.nome) && (p.pids || []).some(function (id) { return (m.pids || []).indexOf(id) >= 0; });
+      }).map(function (p) { return nomeCurto(p.placa); }) : [];
+      var det = [m.params, m.quant, m.contexto ? 'contexto ' + fmt(m.contexto) : ''].filter(Boolean);
+      var uso = [];
+      if (m.tamanhoGB != null) uso.push((m.fonte === 'Ollama' ? 'total ' : 'arquivo ') + fmt(m.tamanhoGB, 1) + ' GB');
+      if (m.kvGB != null) uso.push('cache KV ~' + fmt(m.kvGB, 1) + ' GB' + (m.cacheTipo ? ' (' + m.cacheTipo + ')' : ' (estimativa em f16)'));
+      if (outras.length) uso.push('dividido com ' + outras.filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', '));
+      return '<div class="modelo"><div class="mt"><span>' + esc(m.nome) + '</span><span>' + (m.vramGB != null ? fmt(m.vramGB, 1) + ' GB na VRAM' : esc(m.fonte)) + '</span></div>' +
+        '<div class="md">' + esc([m.fonte].concat(det).join(' · ')) + '</div>' +
+        (uso.length ? '<div class="md">' + esc(uso.join(' · ')) + '</div>' : '') + '</div>';
+    }).join('');
+  }
+  function tickModelos() {
+    if (paused || compacto || document.hidden) return;
+    fetch('/modelos', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (j) {
+      modelos = [].concat(j || []);
+      desenharModelos();
+    }).catch(function () {});
+  }
+  tickModelos();
+  setInterval(tickModelos, 5000);
 
   // ---------- gravar sessão (o servidor grava; aqui só comanda e mostra)
   var sessaoEstado = null, sessaoT = null, sessaoGer = 0, sessaoPedindo = false, sessaoErro = null;

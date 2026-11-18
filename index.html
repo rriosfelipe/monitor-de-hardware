@@ -1791,8 +1791,13 @@ body.compact .kpi .kv{font-size:24px}
     var varias = !$('gpuSel').hidden, lista = ultimoProc.gpu || [];
     if (varias && gpuAtual) lista = lista.filter(function (p) { return !p.placa || p.placa === gpuAtual.nome; });
     // ordem por VRAM: a pergunta aqui costuma ser "quem está ocupando a memória da placa"
-    lista = lista.slice().sort(function (a, b) { return (b.memMB || 0) - (a.memMB || 0) || (b.pct || 0) - (a.pct || 0); });
-    $('gpuProcs').innerHTML = lista.length ? lista.slice(0, 8).map(function (p) { return linhaProc(p, nomeMotor(p.motor)); }).join('')
+    // o dwm (a tela do Windows) recebe as imagens das janelas dos outros programas e o Windows soma tudo nele:
+    // a VRAM dele não é consumo próprio, então vai para o fim da lista com um aviso
+    var dwm = function (p) { return /^dwm$/i.test(p.nome); };
+    lista = lista.slice().sort(function (a, b) { return dwm(a) - dwm(b) || (b.memMB || 0) - (a.memMB || 0) || (b.pct || 0) - (a.pct || 0); });
+    $('gpuProcs').innerHTML = lista.length ? lista.slice(0, 8).map(function (p) {
+      return dwm(p) ? linhaProc(p, 'tela do Windows · inclui as janelas dos outros programas') : linhaProc(p, nomeMotor(p.motor));
+    }).join('')
       : '<div class="empty">Nenhum programa usando ' + (varias ? 'esta placa' : 'a GPU') + '.</div>';
     desenharModelos();
   }

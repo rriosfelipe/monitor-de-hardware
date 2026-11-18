@@ -1790,7 +1790,9 @@ body.compact .kpi .kv{font-size:24px}
     if (!ultimoProc || ultimoProc.erro) return;
     var varias = !$('gpuSel').hidden, lista = ultimoProc.gpu || [];
     if (varias && gpuAtual) lista = lista.filter(function (p) { return !p.placa || p.placa === gpuAtual.nome; });
-    $('gpuProcs').innerHTML = lista.length ? lista.slice(0, 6).map(function (p) { return linhaProc(p, nomeMotor(p.motor)); }).join('')
+    // ordem por VRAM: a pergunta aqui costuma ser "quem está ocupando a memória da placa"
+    lista = lista.slice().sort(function (a, b) { return (b.memMB || 0) - (a.memMB || 0) || (b.pct || 0) - (a.pct || 0); });
+    $('gpuProcs').innerHTML = lista.length ? lista.slice(0, 8).map(function (p) { return linhaProc(p, nomeMotor(p.motor)); }).join('')
       : '<div class="empty">Nenhum programa usando ' + (varias ? 'esta placa' : 'a GPU') + '.</div>';
     desenharModelos();
   }

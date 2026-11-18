@@ -46,6 +46,69 @@ namespace MonitorHW
             public double MotorPct;
             public string Placa;
             public List<int> Pids = new List<int>();
+            public string Dono;
+        }
+
+        // ---- Programa dono de cada processo auxiliar (node, powershell, python...): o primeiro ancestral que não é
+        // auxiliar. Pai de cada processo pela foto do sistema (Toolhelp), que é rápida e não exige administrador.
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct PROCESSENTRY32W
+        {
+            public uint dwSize, cntUsage, th32ProcessID;
+            public IntPtr th32DefaultHeapID;
+            public uint th32ModuleID, cntThreads, th32ParentProcessID;
+            public int pcPriClassBase;
+            public uint dwFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile;
+        }
+        [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint pid);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool Process32FirstW(IntPtr snap, ref PROCESSENTRY32W e);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool Process32NextW(IntPtr snap, ref PROCESSENTRY32W e);
+        [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+
+        static readonly HashSet<string> auxiliares = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+            "node", "powershell", "pwsh", "cmd", "conhost", "OpenConsole", "bun", "deno", "python", "pythonw", "py", "uv", "uvx",
+            "npx", "npm", "bash", "sh", "git", "java", "javaw", "dotnet", "ruby", "perl", "msedgewebview2", "WindowsTerminal" };
+
+        static Dictionary<int, KeyValuePair<int, string>> Arvore()
+        {
+            var d = new Dictionary<int, KeyValuePair<int, string>>();
+            IntPtr snap = CreateToolhelp32Snapshot(2, 0);   // TH32CS_SNAPPROCESS
+            if (snap == IntPtr.Zero || snap == new IntPtr(-1)) return d;
+            try
+            {
+                var e = new PROCESSENTRY32W();
+                e.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32W));
+                if (!Process32FirstW(snap, ref e)) return d;
+                do
+                {
+                    string n = e.szExeFile ?? "";
+                    if (n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) n = n.Substring(0, n.Length - 4);
+                    d[(int)e.th32ProcessID] = new KeyValuePair<int, string>((int)e.th32ParentProcessID, n);
+                } while (Process32NextW(snap, ref e));
+            }
+            finally { CloseHandle(snap); }
+            return d;
+        }
+
+        static string Dono(int pid, string nome, Dictionary<int, KeyValuePair<int, string>> arv)
+        {
+            if (!auxiliares.Contains(nome)) return "";
+            int atual = pid;
+            for (int i = 0; i < 20; i++)
+            {
+                KeyValuePair<int, string> e;
+                if (!arv.TryGetValue(atual, out e)) return "";
+                int pai = e.Key;
+                KeyValuePair<int, string> ep;
+                if (pai == 0 || pai == atual || !arv.TryGetValue(pai, out ep)) return "";
+                if (!auxiliares.Contains(ep.Value) && !ep.Value.Equals("explorer", StringComparison.OrdinalIgnoreCase)
+                    && !ep.Value.Equals("svchost", StringComparison.OrdinalIgnoreCase) && !ep.Value.Equals("services", StringComparison.OrdinalIgnoreCase))
+                    return ep.Value;
+                if (!auxiliares.Contains(ep.Value)) return "";   // aberto direto pelo Windows ou pela área de trabalho
+                atual = pai;
+            }
+            return "";
         }
 
         // ---- Placas de vídeo pelo LUID (o mesmo que aparece nos contadores de GPU), via DXGI ----
@@ -183,6 +246,7 @@ namespace MonitorHW
             var cpu = new Dictionary<string, Grupo>(StringComparer.OrdinalIgnoreCase);
             var atual = new Dictionary<int, double>();
             var todos = Process.GetProcesses();
+            var arvore = Arvore();
             try
             {
             foreach (var p in todos)
@@ -191,7 +255,10 @@ namespace MonitorHW
                 {
                     if (p.Id == 0) continue;
                     nomes[p.Id] = p.ProcessName;
-                    var g = Pegar(cpu, p.ProcessName);
+                    // processos auxiliares agrupados pelo programa dono: "node" do Claude separado do "node" do Cursor
+                    string dono = Dono(p.Id, p.ProcessName, arvore);
+                    var g = Pegar(cpu, dono.Length > 0 ? p.ProcessName + "|" + dono : p.ProcessName);
+                    if (dono.Length > 0) { g.Nome = p.ProcessName; g.Dono = dono; }
                     g.Qtd++;
                     try { g.MemMB += p.WorkingSet64 / 1048576.0; } catch { }
                     double ms;
@@ -287,6 +354,7 @@ namespace MonitorHW
                 sb.Append("{\"nome\":\"").Append(Escapar(g.Nome)).Append("\",\"qtd\":").Append(g.Qtd)
                   .Append(",\"pct\":").Append(Math.Min(100, g.Pct).ToString("0.0", inv))
                   .Append(",\"memMB\":").Append(g.MemMB.ToString("0", inv));
+                if (!string.IsNullOrEmpty(g.Dono)) sb.Append(",\"dono\":\"").Append(Escapar(g.Dono)).Append('"');
                 if (ehGpu)
                 {
                     sb.Append(",\"motor\":\"").Append(Escapar(g.Motor ?? "")).Append("\",\"placa\":\"").Append(Escapar(g.Placa ?? "")).Append("\",\"pids\":[");

@@ -1779,7 +1779,7 @@ body.compact .kpi .kv{font-size:24px}
     if (paused || compacto) return;
     fetch('/processos', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
       if (j.erro) { $('cpuProcs').innerHTML = $('gpuProcs').innerHTML = '<div class="empty">' + esc(j.erro) + '</div>'; return; }
-      $('cpuProcs').innerHTML = j.cpu.length ? j.cpu.slice(0, 10).map(function (p) { return linhaProc(p); }).join('') : '<div class="empty">Medindo…</div>';
+      $('cpuProcs').innerHTML = j.cpu.length ? j.cpu.slice(0, 10).map(function (p) { return linhaProc(p, p.dono ? 'aberto por ' + p.dono : ''); }).join('') : '<div class="empty">Medindo…</div>';
       ultimoProc = j;
       desenharProcGpu();
     }).catch(function () {});
